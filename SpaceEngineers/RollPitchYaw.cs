@@ -68,14 +68,13 @@ namespace RollPitchYaw
 
 
 
-        
-        string flightIndicatorsLcdName = "";
-        bool flightIndicatorsShouldAutoFindLcd = true; // TODO use it
+        // config
+        string[] flightIndicatorsLcdNames = { };     
         string flightIndicatorsControllerName = ""; // TODO use it
-        bool flightIndicatorsShouldAutoFindController = true; // TODO use it
 
+        // end of config
+        List<IMyTextPanel> flightIndicatorsLcdDisplay = new List<IMyTextPanel>();
         IMyShipController flightIndicatorsShipController = null;
-        IMyTextPanel flightIndicatorsLcdDisplay = null;
         double flightIndicatorsShipControllerCurrentSpeed = 0;
         Vector3D flightIndicatorsShipControllerAbsoluteNorthVec;
         double flightIndicatorsPitch;
@@ -83,59 +82,77 @@ namespace RollPitchYaw
         double flightIndicatorsYaw;
         double flightIndicatorsElevation = 0;
 
-        const double rad2deg = 180 / Math.PI;
-        const double deg2rad = Math.PI / 180;
+        const double flightIndicatorsRad2deg = 180 / Math.PI;
+        const double flightIndicatorsDeg2rad = Math.PI / 180;
 
         public Program()
         {
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
-            Init();
         }
-
-        private void Init()
-        {
-            List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(blocks);
-            if (blocks.Count == 0)
-            {
-                throw new Exception("No LCD Screen");
-            }
-            flightIndicatorsLcdDisplay = (IMyTextPanel)blocks[1];
-            flightIndicatorsLcdDisplay.SetValue("FontColor", new Color(150, 30, 50));
-            flightIndicatorsLcdDisplay.SetValue<Single>("FontSize", (Single)2);
-            flightIndicatorsLcdDisplay.ApplyAction("OnOff_On");
-
-            List<IMyShipController> shipControllers = new List<IMyShipController>();
-            GridTerminalSystem.GetBlocksOfType<IMyShipController>(shipControllers);
-
-            flightIndicatorsShipController = GetControlledShipController(shipControllers);
-            if (flightIndicatorsShipController == null && shipControllers.Count != 0)
-            {
-                flightIndicatorsShipController = shipControllers[0];
-            }
-            if (flightIndicatorsShipController == null)
-            {
-                throw new Exception("No user detected in any control seats");
-            }
-
-            // compute absoluteNorthVec
-            Vector3D shipForwardVec = flightIndicatorsShipController.WorldMatrix.Forward;
-            Vector3D gravityVec = flightIndicatorsShipController.GetNaturalGravity();
-            Vector3D planetRelativeLeftVec = shipForwardVec.Cross(gravityVec);
-            flightIndicatorsShipControllerAbsoluteNorthVec = planetRelativeLeftVec;
-        }
-
 
         public void Main(string argument, UpdateType updateSource)
         {
+            if (!TryInit())
+            {
+                return;
+            }
             Compute();
-            flightIndicatorsLcdDisplay.WritePublicText("Speed " + flightIndicatorsShipControllerCurrentSpeed.ToString("N2") + " m/s" + "\n");
-            flightIndicatorsLcdDisplay.WritePublicText("Pitch " + flightIndicatorsPitch.ToString("N2") + "°\n", true);
-            flightIndicatorsLcdDisplay.WritePublicText("Roll " + flightIndicatorsRoll.ToString("N2") + "°\n", true);
-            flightIndicatorsLcdDisplay.WritePublicText("Yaw " + flightIndicatorsYaw.ToString("N2") + "°\n", true);
-            flightIndicatorsLcdDisplay.WritePublicText("Elevation " + flightIndicatorsElevation.ToString("N0") + " m\n", true);
+            Display();
         }
 
+        private bool TryInit()
+        {
+            if(flightIndicatorsLcdDisplay.Count==0)
+            {
+                if (flightIndicatorsLcdNames.Length == 0)
+                {
+                    flightIndicatorsLcdDisplay.Add(FindFirstLcd());
+                } else
+                {
+                    flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
+                }
+                
+                if (flightIndicatorsLcdDisplay.Count == 0)
+                {
+                    Echo("Cound not find any LCD");
+                    return false;
+                }
+            }
+            
+            if(flightIndicatorsShipController == null)
+            {
+                List<IMyShipController> shipControllers = new List<IMyShipController>();
+                GridTerminalSystem.GetBlocksOfType<IMyShipController>(shipControllers);
+
+                if (shipControllers.Count != 0)
+                {
+                    flightIndicatorsShipController = shipControllers[0];
+                } else
+                {
+                    Echo("No controller found");
+                    return false;
+                }                
+
+                // compute absoluteNorthVec
+                Vector3D shipForwardVec = flightIndicatorsShipController.WorldMatrix.Forward;
+                Vector3D gravityVec = flightIndicatorsShipController.GetNaturalGravity();
+                Vector3D planetRelativeLeftVec = shipForwardVec.Cross(gravityVec);
+                flightIndicatorsShipControllerAbsoluteNorthVec = planetRelativeLeftVec;
+            }
+            
+            return true;
+        }
+
+        private void Display()
+        {
+            StringBuilder stringBuilder = new StringBuilder();
+            WriteOutput(stringBuilder, "Speed {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
+            WriteOutput(stringBuilder, "Pitch {0}°", Math.Round(flightIndicatorsPitch, 2));
+            WriteOutput(stringBuilder, "Roll {0}°", Math.Round(flightIndicatorsRoll, 2));
+            WriteOutput(stringBuilder, "Yaw {0}°", Math.Round(flightIndicatorsYaw, 2));
+            WriteOutput(stringBuilder, "Elevation {0} m", Math.Round(flightIndicatorsElevation, 0));
+            LcdDisplayMessage(stringBuilder.ToString(), flightIndicatorsLcdDisplay);
+        }
 
         private void Compute()
         {
@@ -164,13 +181,13 @@ namespace RollPitchYaw
                 return;
             }
             // Roll
-            flightIndicatorsRoll = VectorAngleBetween(shipLeftVec, planetRelativeLeftVec) * rad2deg * Math.Sign(shipLeftVec.Dot(gravityVec));
+            flightIndicatorsRoll = VectorAngleBetween(shipLeftVec, planetRelativeLeftVec) * flightIndicatorsRad2deg * Math.Sign(shipLeftVec.Dot(gravityVec));
             if (flightIndicatorsRoll > 90 || flightIndicatorsRoll < -90)
             {
                 flightIndicatorsRoll = 180 - flightIndicatorsRoll; //accounts for upsidedown 
             }
             // Pitch
-            flightIndicatorsPitch = VectorAngleBetween(shipForwardVec, gravityVec) * rad2deg; //angle from nose direction to gravity 
+            flightIndicatorsPitch = VectorAngleBetween(shipForwardVec, gravityVec) * flightIndicatorsRad2deg; //angle from nose direction to gravity 
             flightIndicatorsPitch -= 90; //as 90 degrees is level with ground 
             // Yaw
             //get east vector  
@@ -182,7 +199,7 @@ namespace RollPitchYaw
             Vector3D forwardProjPlaneVec = shipForwardVec - forwardProjectUp;
 
             //find angle from abs north to projected forward vector measured clockwise  
-            flightIndicatorsYaw = VectorAngleBetween(forwardProjPlaneVec, relativeNorthVec) * rad2deg;
+            flightIndicatorsYaw = VectorAngleBetween(forwardProjPlaneVec, relativeNorthVec) * flightIndicatorsRad2deg;
             if (shipForwardVec.Dot(relativeEastVec) < 0)
             {
                 flightIndicatorsYaw = 360 - flightIndicatorsYaw; //because of how the angle is measured  
@@ -193,17 +210,6 @@ namespace RollPitchYaw
                 flightIndicatorsElevation = -1; //error, no gravity field is detected earlier, so it's another kind of problem
             }
                                     
-        }
-
-        IMyShipController GetControlledShipController(List<IMyShipController> SCs)
-        {
-            foreach (IMyShipController thisController in SCs)
-            {
-                if (thisController.IsUnderControl && thisController.CanControlShip)
-                    return thisController;
-            }
-
-            return null;
         }
 
         double VectorAngleBetween(Vector3D a, Vector3D b) //returns radians 
@@ -222,7 +228,117 @@ namespace RollPitchYaw
             return a.Dot(b) / b.LengthSquared() * b;
         }
 
+        void WriteOutput(StringBuilder output, string fmt, params object[] args)
+        {
+            output.Append(string.Format(fmt, args));
+            output.Append('\n');
+        }
 
+
+
+        //
+        // LCD library code
+        // IMyTextPanel FindFirstLcd()
+        // List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        // void InitDisplays(List<IMyTextPanel> myTextPanels)
+        // void InitDisplay(IMyTextPanel myTextPanel)
+
+        Color defaultFontColor = new Color(150, 30, 50);
+
+        private void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+        {
+            foreach (IMyTextPanel myTextPanel in myTextPanels)
+            {
+                myTextPanel.WritePublicText(message, append);
+            }
+        }
+
+        // return null if no lcd
+        private IMyTextPanel FindFirstLcd()
+        {
+            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
+            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
+            if (temporaryLcdList.Count > 0)
+            {
+                return temporaryLcdList[0];
+            }
+            return null;
+        }
+
+        // return all lcd in groups + all lcd by names
+        private List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        {
+            List<IMyTextPanel> lcds = new List<IMyTextPanel>();
+            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
+
+            List<IMyTextPanel> allLcdList = new List<IMyTextPanel>();
+            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(allLcdList);
+            // get groups
+            for (int i = 0; i < lcdGoupsAndNames.Length; i++)
+            {
+                IMyBlockGroup lcdGroup = GridTerminalSystem.GetBlockGroupWithName(lcdGoupsAndNames[i]);
+                if (lcdGroup != null)
+                {
+                    temporaryLcdList.Clear();
+                    lcdGroup.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
+                    if (temporaryLcdList.Count == 0)
+                    {
+                        Echo("Warning : group " + lcdGoupsAndNames[i] + " has no LCD.");
+                    }
+                    lcds.AddList(temporaryLcdList);
+                }
+                else
+                {
+                    bool found = false;
+                    foreach (IMyTextPanel myTextPanel in allLcdList)
+                    {
+                        if (myTextPanel.CustomName == lcdGoupsAndNames[i])
+                        {
+                            lcds.Add(myTextPanel);
+                            found = true;
+                            break;
+                        }
+
+                    }
+                    if (!found)
+                    {
+                        Echo("Warning : LCD named " + lcdGoupsAndNames[i] + " not found (and is not a group).");
+                    }
+                }
+            }
+            InitDisplays(lcds);
+            return lcds;
+        }
+
+
+        private void InitDisplays(List<IMyTextPanel> myTextPanels)
+        {
+            InitDisplays(myTextPanels, defaultFontColor);
+        }
+
+        private void InitDisplay(IMyTextPanel myTextPanel)
+        {
+            InitDisplay(myTextPanel, defaultFontColor);
+        }
+
+        private void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+        {
+            foreach (IMyTextPanel myTextPanel in myTextPanels)
+            {
+                InitDisplay(myTextPanel, color);
+            }
+        }
+
+        private void InitDisplay(IMyTextPanel myTextPanel, Color color)
+        {
+            myTextPanel.FontColor = color;
+            myTextPanel.FontSize = (Single)2;
+            myTextPanel.ApplyAction("OnOff_On");
+        }
+
+        //
+        // END LCD LIBRARY CODE
+        //
 
 
 
