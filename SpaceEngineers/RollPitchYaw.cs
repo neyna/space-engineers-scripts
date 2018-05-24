@@ -69,8 +69,8 @@ namespace RollPitchYaw
 
 
         // config
-        string[] flightIndicatorsLcdNames = { };     
-        string flightIndicatorsControllerName = ""; // TODO use it
+        string[] flightIndicatorsLcdNames = {""};
+        string flightIndicatorsControllerName = "";
 
         // end of config
         List<IMyTextPanel> flightIndicatorsLcdDisplay = new List<IMyTextPanel>();
@@ -92,7 +92,6 @@ namespace RollPitchYaw
 
         public void Main(string argument, UpdateType updateSource)
         {
-            Echo("");
             if (!TryInit())
             {
                 return;
@@ -106,13 +105,10 @@ namespace RollPitchYaw
             // LCD
             if(flightIndicatorsLcdDisplay.Count==0)
             {
-                if (flightIndicatorsLcdNames.Length == 0)
+                flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
+                if (flightIndicatorsLcdDisplay.Count == 0)
                 {
                     flightIndicatorsLcdDisplay.Add(FindFirstLcd());
-                }
-                else
-                {
-                    flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
                 }
 
                 if (flightIndicatorsLcdDisplay.Count == 0)
@@ -299,6 +295,10 @@ namespace RollPitchYaw
             // get groups
             for (int i = 0; i < lcdGoupsAndNames.Length; i++)
             {
+                if (lcdGoupsAndNames[i].Length == 0)
+                {
+                    break;
+                }
                 IMyBlockGroup lcdGroup = GridTerminalSystem.GetBlockGroupWithName(lcdGoupsAndNames[i]);
                 if (lcdGroup != null)
                 {
@@ -325,7 +325,7 @@ namespace RollPitchYaw
                     }
                     if (!found)
                     {
-                        Echo("Warning : LCD named " + lcdGoupsAndNames[i] + " not found (and is not a group).");
+                        Echo("Warning : LCD or group named\n" + lcdGoupsAndNames[i] + " not found.");
                     }
                 }
             }

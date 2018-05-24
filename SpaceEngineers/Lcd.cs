@@ -118,6 +118,10 @@ namespace LcdLib
             // get groups
             for (int i = 0; i < lcdGoupsAndNames.Length; i++)
             {
+                if(lcdGoupsAndNames[i].Length==0)
+                {
+                    break;
+                }
                 IMyBlockGroup lcdGroup = GridTerminalSystem.GetBlockGroupWithName(lcdGoupsAndNames[i]);
                 if (lcdGroup != null)
                 {
@@ -144,7 +148,7 @@ namespace LcdLib
                     }
                     if(!found)
                     {
-                        Echo("Warning : LCD named "+ lcdGoupsAndNames[i]+" not found (and is not a group).");
+                        Echo("Warning : LCD or group named\n" + lcdGoupsAndNames[i]+" not found.");
                     }
                 }                
             }
