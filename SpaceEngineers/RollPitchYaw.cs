@@ -92,6 +92,7 @@ namespace RollPitchYaw
 
         public void Main(string argument, UpdateType updateSource)
         {
+            Echo("");
             if (!TryInit())
             {
                 return;
@@ -102,36 +103,58 @@ namespace RollPitchYaw
 
         private bool TryInit()
         {
+            // LCD
             if(flightIndicatorsLcdDisplay.Count==0)
             {
                 if (flightIndicatorsLcdNames.Length == 0)
                 {
                     flightIndicatorsLcdDisplay.Add(FindFirstLcd());
-                } else
+                }
+                else
                 {
                     flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
                 }
-                
+
                 if (flightIndicatorsLcdDisplay.Count == 0)
                 {
                     Echo("Cound not find any LCD");
                     return false;
                 }
             }
-            
-            if(flightIndicatorsShipController == null)
-            {
-                List<IMyShipController> shipControllers = new List<IMyShipController>();
-                GridTerminalSystem.GetBlocksOfType<IMyShipController>(shipControllers);
 
-                if (shipControllers.Count != 0)
+            
+            // Controller
+            if (flightIndicatorsShipController == null)
+            {
+                if(flightIndicatorsControllerName != null && flightIndicatorsControllerName.Length != 0)
                 {
-                    flightIndicatorsShipController = shipControllers[0];
+                    IMyTerminalBlock namedController = GridTerminalSystem.GetBlockWithName(flightIndicatorsControllerName);
+                    if(namedController == null)
+                    {
+                        string message = "No controller named \n" + flightIndicatorsControllerName + " found.";
+                        Echo(message);
+                        LcdDisplayMessage(message, flightIndicatorsLcdDisplay);
+                        return false;
+                    }
+                    flightIndicatorsShipController = (IMyShipController) namedController;
                 } else
                 {
-                    Echo("No controller found");
-                    return false;
-                }                
+                    List<IMyShipController> shipControllers = new List<IMyShipController>();
+                    GridTerminalSystem.GetBlocksOfType<IMyShipController>(shipControllers);
+
+                    if (shipControllers.Count != 0)
+                    {
+                        flightIndicatorsShipController = shipControllers[0];
+                    }
+                    else
+                    {
+                        string message = "No controller found.";
+                        Echo(message);
+                        LcdDisplayMessage(message, flightIndicatorsLcdDisplay);
+                        return false;
+                    }
+                }
+                      
 
                 // compute absoluteNorthVec
                 Vector3D shipForwardVec = flightIndicatorsShipController.WorldMatrix.Forward;
