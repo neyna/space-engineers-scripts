@@ -86,6 +86,7 @@ namespace LcdLib
         // void InitDisplay(IMyTextPanel myTextPanel)
 
         Color defaultFontColor = new Color(150, 30, 50);
+        float defaultSize = 2;
 
         private void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
         {
@@ -102,7 +103,9 @@ namespace LcdLib
             GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
             if(temporaryLcdList.Count>0)
             {
-                return temporaryLcdList[0];
+                IMyTextPanel lcd = temporaryLcdList[0];
+                InitDisplay(lcd);
+                return lcd;
             }
             return null;
         }
@@ -176,9 +179,10 @@ namespace LcdLib
         }
 
         private void InitDisplay(IMyTextPanel myTextPanel, Color color)
-        {         
+        {
+            myTextPanel.ShowPublicTextOnScreen();
             myTextPanel.FontColor = color;
-            myTextPanel.FontSize = (Single)2;
+            myTextPanel.FontSize = defaultSize;
             myTextPanel.ApplyAction("OnOff_On");
         }
 
