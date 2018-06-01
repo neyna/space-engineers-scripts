@@ -99,62 +99,18 @@ namespace LcdLib
         // return null if no lcd
         private IMyTextPanel FindFirstLcd()
         {
-            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
-            if(temporaryLcdList.Count>0)
+            IMyTextPanel lcd = FindFirstBlockByType<IMyTextPanel>();
+            if(lcd != null)
             {
-                IMyTextPanel lcd = temporaryLcdList[0];
                 InitDisplay(lcd);
-                return lcd;
-            }
-            return null;
+            }            
+            return lcd;
         }
 
         // return all lcd in groups + all lcd by names
         private List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
         {
-            List<IMyTextPanel> lcds = new List<IMyTextPanel>();
-            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
-
-            List<IMyTextPanel> allLcdList = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(allLcdList);
-            // get groups
-            for (int i = 0; i < lcdGoupsAndNames.Length; i++)
-            {
-                if(lcdGoupsAndNames[i].Length==0)
-                {
-                    break;
-                }
-                IMyBlockGroup lcdGroup = GridTerminalSystem.GetBlockGroupWithName(lcdGoupsAndNames[i]);
-                if (lcdGroup != null)
-                {
-                    temporaryLcdList.Clear();
-                    lcdGroup.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
-                    if (temporaryLcdList.Count == 0)
-                    {
-                        Echo("Warning : group " + lcdGoupsAndNames[i] + " has no LCD.");
-                    }
-                    lcds.AddList(temporaryLcdList);
-                }
-                else
-                {
-                    bool found = false;
-                    foreach (IMyTextPanel myTextPanel in allLcdList)
-                    {
-                        if (myTextPanel.CustomName == lcdGoupsAndNames[i])
-                        {
-                            lcds.Add(myTextPanel);
-                            found = true;
-                            break;
-                        }
-
-                    }
-                    if(!found)
-                    {
-                        Echo("Warning : LCD or group named\n" + lcdGoupsAndNames[i]+" not found.");
-                    }
-                }                
-            }
+            List<IMyTextPanel> lcds = FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
             InitDisplays(lcds);
             return lcds;
         }
@@ -190,6 +146,73 @@ namespace LcdLib
         // END LCD LIBRARY CODE
         //
 
+
+        //
+        // BASIC LIBRARY
+        //
+
+        private T FindFirstBlockByType<T>() where T : class
+        {
+            List<T> temporaryList = new List<T>();
+            GridTerminalSystem.GetBlocksOfType(temporaryList);
+            if (temporaryList.Count > 0)
+            {
+                return temporaryList[0];               
+            }            
+            return null;
+        }
+
+        private List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
+        {
+            List<T> result = new List<T>();
+
+            List<T> temporaryList = new List<T>();
+            List<T> allBlockList = new List<T>();
+            GridTerminalSystem.GetBlocksOfType(allBlockList);
+
+            if (names == null) return result;
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (names[i].Length == 0)
+                {
+                    break;
+                }
+                IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
+                if (blockGroup != null)
+                {
+                    temporaryList.Clear();
+                    blockGroup.GetBlocksOfType(temporaryList);
+                    if (temporaryList.Count == 0)
+                    {
+                        Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
+                    }
+                    result.AddList(temporaryList);
+                }
+                else
+                {
+                    bool found = false;
+                    foreach (T block in allBlockList)
+                    {
+                        if (((IMyTerminalBlock)block).CustomName == names[i])
+                        {
+                            result.Add(block);
+                            found = true;
+                            break;
+                        }
+
+                    }
+                    if (!found)
+                    {
+                        Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                    }
+                }
+            }
+            return result;
+        }
+
+        //
+        // END OF BASIC LIBRARY
+        //
 
 
 
