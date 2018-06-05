@@ -75,6 +75,7 @@ namespace RollPitchYaw
         // config
         string[] flightIndicatorsLcdNames = {""};
         string flightIndicatorsControllerName = "";
+        const bool stalizableYaw = true;
 
         // end of config
 
@@ -128,7 +129,7 @@ namespace RollPitchYaw
             flightIndicators.Compute();
             if(flightIndicatorsFlightMode == FlightMode.STABILIZATION)
             {
-                fightStabilizator.CorrectRollAndPitch();
+                fightStabilizator.Stabilize(true, true, stalizableYaw);
             } else if(flightIndicatorsFlightMode == FlightMode.CALIBRATION)
             {
                 // TODO
@@ -263,7 +264,9 @@ namespace RollPitchYaw
             public Action<string> Echo;
             BasicLibrary basicLibrary;
             IMyShipController shipController;
-            PIDController pid;
+            PIDController pitchPid;
+            PIDController rollPid;
+            PIDController yawPid;
 
             float gyroscopeOverridedRoll = 0;
             float gyroscopeOverridedPitch = 0;
@@ -274,7 +277,9 @@ namespace RollPitchYaw
 
             float gyroscopeMaximumGyroscopePower = 1.0f;
             float gyroscopeMaximumErrorMargin = 0.001f;
-            float desiredAngle = 0;
+            float pitchDesiredAngle = 0;
+            float yawDesiredAngle = 0;
+            float rollDesiredAngle = 0;
 
             string WarningMessage = null;
             List<IMyGyro> gyroscopes = new List<IMyGyro>();
@@ -285,14 +290,20 @@ namespace RollPitchYaw
                 this.Echo = basicLibrary.Echo;
                 this.basicLibrary = basicLibrary;
                 this.shipController = shipController;
-                this.pid = new PIDController(pidP, pidI, pidD);
+
+                pitchPid = new PIDController(pidP, pidI, pidD);
+                rollPid = new PIDController(pidP, pidI, pidD);
+                yawPid = new PIDController(pidP, pidI, pidD);
             }
 
             public void Reset()
             {
                 firstRun = true;
                 FindAndInitGyroscopesOverdrive();
-                pid.Reset();
+
+                pitchPid.Reset();
+                rollPid.Reset();
+                yawPid.Reset();
             }
 
             public void Release()
@@ -300,7 +311,12 @@ namespace RollPitchYaw
                 ReleaseGyroscopes();
             }
 
-            public void CorrectRollAndPitch()
+            public void Stabilize()
+            {
+                Stabilize(true, true, false);
+            }
+
+            public void Stabilize(bool roll, bool pitch, bool yaw)
             {
                 if (gyroscopes.Count == 0)
                 {
@@ -309,16 +325,15 @@ namespace RollPitchYaw
                     return;
                 }
 
-                float maxYaw = gyroscopes[0].GetMaximum<float>("Yaw") * gyroscopeMaximumGyroscopePower;
-
-                double tempYaw = flightIndicators.Yaw;
-                if (tempYaw > 180)
+                float maxGyroValue = gyroscopes[0].GetMaximum<float>("Yaw") * gyroscopeMaximumGyroscopePower;
+                
+                // center yaw at origin
+                double originCenteredYaw = flightIndicators.Yaw;
+                if (originCenteredYaw > 180)
                 {
-                    tempYaw -= 360;
+                    originCenteredYaw -= 360;
                 }
 
-                double error = 0;
-                double command = 0;
                 double currentTime = BasicLibrary.GetCurrentTimeInMs();
                 double timeStep = currentTime - lastTime;
 
@@ -329,22 +344,19 @@ namespace RollPitchYaw
                 }
 
                 if (!firstRun)
-                {
-                    error = tempYaw - desiredAngle;
-                    if (Math.Abs(error) > gyroscopeMaximumErrorMargin)
-                    {
-                        command = - pid.Control(error, timeStep / 1000);
-                        command = MathHelper.Clamp(command, -maxYaw, maxYaw);
-                        ApplyGyroOverride(0, command, 0, gyroscopes, shipController);
-                    }
-                    else
-                    {
-                        ApplyGyroOverride(0, 0, 0, gyroscopes, shipController);
-                    }
+                {                    
+                    double pitchCommand = ComputeCommand(flightIndicators.Pitch - pitchDesiredAngle, pitchPid, timeStep, maxGyroValue);
+                    double yawCommand = ComputeCommand(originCenteredYaw - yawDesiredAngle, yawPid, timeStep, maxGyroValue);
+                    double rollCommand = ComputeCommand(flightIndicators.Roll - rollDesiredAngle, rollPid, timeStep, maxGyroValue);
+                    // + rollCommand because of the way we compute it
+                    ApplyGyroOverride( - pitchCommand, - yawCommand, rollCommand, gyroscopes, shipController); 
                 }
                 else
-                {
-                    command = (tempYaw > 0) ? -maxYaw / 100 : maxYaw / 100;
+                {                    
+                    double pitchCommand = (flightIndicators.Pitch > pitchDesiredAngle) ? maxGyroValue : - maxGyroValue;
+                    double yawCommand = (originCenteredYaw > yawDesiredAngle) ? maxGyroValue : - maxGyroValue;
+                    double rollCommand = (flightIndicators.Roll > rollDesiredAngle) ? maxGyroValue : - maxGyroValue;
+                    ApplyGyroOverride( - pitchCommand/100, - yawCommand/100, rollCommand/100, gyroscopes, shipController);
                     firstRun = false;
                 }              
 
@@ -352,6 +364,21 @@ namespace RollPitchYaw
                 gyroscopeOverridedRoll = gyroscopes[0].Roll;
                 gyroscopeOverridedYaw = gyroscopes[0].Yaw;
                 lastTime = BasicLibrary.GetCurrentTimeInMs();
+            }
+
+            double ComputeCommand(double error, PIDController pid, double timeStep, double maxGyroValue)
+            {
+                if (Math.Abs(error) > gyroscopeMaximumErrorMargin)
+                {
+                    double command = pid.Control(error, timeStep / 1000);
+                    command = MathHelper.Clamp(command, -maxGyroValue, maxGyroValue);
+                    return command;
+                }
+                else
+                {
+                    return 0.0d;
+                }
+                
             }
 
             public string DisplayText()
@@ -435,11 +462,12 @@ namespace RollPitchYaw
                     thisGyro.GyroOverride = true;
                 }
             }
-        }
+        }       
 
         public static class VectorHelper
         {
-            public static double VectorAngleBetween(Vector3D a, Vector3D b) //returns radians 
+            // in radians
+            public static double VectorAngleBetween(Vector3D a, Vector3D b) 
             {
                 if (Vector3D.IsZero(a) || Vector3D.IsZero(b))
                     return 0;
@@ -447,12 +475,12 @@ namespace RollPitchYaw
                     return Math.Acos(MathHelper.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1));
             }
 
-            public static Vector3D VectorProjection(Vector3D a, Vector3D b)
+            public static Vector3D VectorProjection(Vector3D vectorToProject, Vector3D projectsToVector)
             {
-                if (Vector3D.IsZero(b))
+                if (Vector3D.IsZero(projectsToVector))
                     return Vector3D.Zero;
 
-                return a.Dot(b) / b.LengthSquared() * b;
+                return vectorToProject.Dot(projectsToVector) / projectsToVector.LengthSquared() * projectsToVector;
             }
 
         }
@@ -567,10 +595,9 @@ namespace RollPitchYaw
                     errorDerivative = (error - lastError) / timeStep;
                 }
 
-                errorIntegral += error * timeStep;
-
                 lastError = error;
 
+                errorIntegral += error * timeStep;                
                 return p * error + i * errorIntegral + d * errorDerivative;
             }
 
