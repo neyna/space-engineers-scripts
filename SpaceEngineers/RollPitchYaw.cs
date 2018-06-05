@@ -316,7 +316,7 @@ namespace RollPitchYaw
                 Stabilize(true, true, false);
             }
 
-            public void Stabilize(bool roll, bool pitch, bool yaw)
+            public void Stabilize(bool stabilizeRoll, bool stabilizePitch, bool stabilizeYaw)
             {
                 if (gyroscopes.Count == 0)
                 {
@@ -345,18 +345,14 @@ namespace RollPitchYaw
 
                 if (!firstRun)
                 {                    
-                    double pitchCommand = ComputeCommand(flightIndicators.Pitch - pitchDesiredAngle, pitchPid, timeStep, maxGyroValue);
-                    double yawCommand = ComputeCommand(originCenteredYaw - yawDesiredAngle, yawPid, timeStep, maxGyroValue);
-                    double rollCommand = ComputeCommand(flightIndicators.Roll - rollDesiredAngle, rollPid, timeStep, maxGyroValue);
+                    double pitchCommand = (stabilizePitch)?ComputeCommand(flightIndicators.Pitch - pitchDesiredAngle, pitchPid, timeStep, maxGyroValue):0;
+                    double yawCommand = (stabilizeYaw)?ComputeCommand(originCenteredYaw - yawDesiredAngle, yawPid, timeStep, maxGyroValue):0;
+                    double rollCommand = (stabilizeRoll)?ComputeCommand(flightIndicators.Roll - rollDesiredAngle, rollPid, timeStep, maxGyroValue):0;
                     // + rollCommand because of the way we compute it
                     ApplyGyroOverride( - pitchCommand, - yawCommand, rollCommand, gyroscopes, shipController); 
                 }
                 else
                 {                    
-                    double pitchCommand = (flightIndicators.Pitch > pitchDesiredAngle) ? maxGyroValue : - maxGyroValue;
-                    double yawCommand = (originCenteredYaw > yawDesiredAngle) ? maxGyroValue : - maxGyroValue;
-                    double rollCommand = (flightIndicators.Roll > rollDesiredAngle) ? maxGyroValue : - maxGyroValue;
-                    ApplyGyroOverride( - pitchCommand/100, - yawCommand/100, rollCommand/100, gyroscopes, shipController);
                     firstRun = false;
                 }              
 
