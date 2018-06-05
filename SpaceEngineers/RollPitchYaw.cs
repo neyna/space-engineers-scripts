@@ -89,8 +89,11 @@ namespace RollPitchYaw
         double flightIndicatorsElevation = 0;
 
         List<IMyGyro> flightIndicatorsGyroscopes = new List<IMyGyro>();
-        PIDController flightIndicatorsPID = new PIDController(0.06, 0, 0.01);
-        float flightIndicatorsGyroscopeMaximumGyroscopePower = 0.3f;
+        const double pid_p = 0.06f;
+        const double pid_i = 0.0f;
+        const double pid_d = 0.01f;
+        PIDController flightIndicatorsPID = new PIDController(pid_p, pid_i, pid_d);
+        float flightIndicatorsGyroscopeMaximumGyroscopePower = 1.0f;
         float flightIndicatorsGyroscopeMaximumErrorMargin = 0.001f;
         float flightIndicatorsDesiredAngle = 0;
         string flightIndicatorsWarningMessage = null;
@@ -98,9 +101,14 @@ namespace RollPitchYaw
         const double flightIndicatorsRad2deg = 180 / Math.PI;
         const double flightIndicatorsDeg2rad = Math.PI / 180;
 
+        BasicLibrary basicLibrary;
+        LCDHelper lcdHelper;
+
         public Program()
         {
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;            
+            Runtime.UpdateFrequency = UpdateFrequency.Update10;
+            basicLibrary = new BasicLibrary(GridTerminalSystem, Echo);
+            lcdHelper = new LCDHelper(basicLibrary, new Color(0, 255, 0), 1.5f);
         }
 
         public void Main(string argument, UpdateType updateSource)
@@ -191,7 +199,7 @@ namespace RollPitchYaw
             }
                                     
             error = 0;            
-            double currentTime = GetCurrentTimeInMs();
+            double currentTime = BasicLibrary.GetCurrentTimeInMs();
             double timeStep = currentTime - lastTime;
 
             // sometimes time difference is 0 (because system is caching getTime calls), skip computing for this time
@@ -223,7 +231,7 @@ namespace RollPitchYaw
             t_gyroPitch = flightIndicatorsGyroscopes[0].Pitch;
             t_gyroRoll = flightIndicatorsGyroscopes[0].Roll;
             t_gyroYaw = flightIndicatorsGyroscopes[0].Yaw;
-            lastTime = GetCurrentTimeInMs();
+            lastTime = BasicLibrary.GetCurrentTimeInMs();
         }
 
         void FlightIndicatorsFindAndInitGyroscopesOverdrive()
@@ -273,10 +281,10 @@ namespace RollPitchYaw
             {
                 if(flightIndicatorsLcdNames!=null && flightIndicatorsLcdNames.Length>0 && flightIndicatorsLcdNames[0].Length>0)
                 {
-                    flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
+                    flightIndicatorsLcdDisplay.AddList(lcdHelper.Find(flightIndicatorsLcdNames));
                 } else
                 {
-                    IMyTextPanel textPanel = FindFirstLcd();
+                    IMyTextPanel textPanel = lcdHelper.FindFirst();
                     if (textPanel != null)
                     {
                         flightIndicatorsLcdDisplay.Add(textPanel);
@@ -303,7 +311,7 @@ namespace RollPitchYaw
                     {
                         string message = "No controller named \n" + flightIndicatorsControllerName + " found.";
                         Echo(message);
-                        LcdDisplayMessage(message, flightIndicatorsLcdDisplay);
+                        lcdHelper.DisplayMessage(message, flightIndicatorsLcdDisplay);
                         return false;
                     }
                     flightIndicatorsShipController = (IMyShipController) namedController;
@@ -320,7 +328,7 @@ namespace RollPitchYaw
                     {
                         string message = "No controller found.";
                         Echo(message);
-                        LcdDisplayMessage(message, flightIndicatorsLcdDisplay);
+                        lcdHelper.DisplayMessage(message, flightIndicatorsLcdDisplay);
                         return false;
                     }
                 }
@@ -339,25 +347,24 @@ namespace RollPitchYaw
         void FlightIndicatorsDisplay()
         {
             StringBuilder stringBuilder = new StringBuilder();
-            WriteOutput(stringBuilder, "Speed     {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
-            WriteOutput(stringBuilder, "Pitch       {0}°", Math.Round(flightIndicatorsPitch, 2));
-            WriteOutput(stringBuilder, "Roll         {0}°", Math.Round(flightIndicatorsRoll, 2));
-            WriteOutput(stringBuilder, "Yaw        {0}°", Math.Round(flightIndicatorsYaw, 2));
-            WriteOutput(stringBuilder, "Elevation {0} m", Math.Round(flightIndicatorsElevation, 0));
-            WriteOutput(stringBuilder, flightIndicatorsWarningMessage);            
+
+            BasicLibrary.AppendFormatted(stringBuilder, "Speed     {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
+            BasicLibrary.AppendFormatted(stringBuilder, "Pitch       {0}°", Math.Round(flightIndicatorsPitch, 2));
+            BasicLibrary.AppendFormatted(stringBuilder, "Roll         {0}°", Math.Round(flightIndicatorsRoll, 2));
+            BasicLibrary.AppendFormatted(stringBuilder, "Yaw        {0}°", Math.Round(flightIndicatorsYaw, 2));
+            BasicLibrary.AppendFormatted(stringBuilder, "Elevation {0} m", Math.Round(flightIndicatorsElevation, 0));
+            BasicLibrary.AppendFormatted(stringBuilder, flightIndicatorsWarningMessage);            
             
             if (flightIndicatorsFlightMode == FlightMode.STABILIZATION)
             {
-                WriteOutput(stringBuilder, "Auto-correcting roll and pitch");
-                WriteOutput(stringBuilder, "Pitch overdrive {0}", Math.Round(t_gyroPitch, 4));
-                WriteOutput(stringBuilder, "Roll overdrive  {0}", Math.Round(t_gyroRoll, 4));
-                WriteOutput(stringBuilder, "Yaw overdrive   {0}", Math.Round(t_gyroYaw, 4));
-                WriteOutput(stringBuilder, "Error           {0}", Math.Round(error, 4));
-                WriteOutput(stringBuilder, "Command         {0}", Math.Round(command, 4));
-
-                
+                BasicLibrary.AppendFormatted(stringBuilder, "Auto-correcting roll and pitch");
+                BasicLibrary.AppendFormatted(stringBuilder, "Pitch overdrive {0}", Math.Round(t_gyroPitch, 4));
+                BasicLibrary.AppendFormatted(stringBuilder, "Roll overdrive  {0}", Math.Round(t_gyroRoll, 4));
+                BasicLibrary.AppendFormatted(stringBuilder, "Yaw overdrive   {0}", Math.Round(t_gyroYaw, 4));
+                BasicLibrary.AppendFormatted(stringBuilder, "Error           {0}", Math.Round(error, 4));
+                BasicLibrary.AppendFormatted(stringBuilder, "Command         {0}", Math.Round(command, 4));                
             }
-            LcdDisplayMessage(stringBuilder.ToString(), flightIndicatorsLcdDisplay);
+            lcdHelper.DisplayMessage(stringBuilder.ToString(), flightIndicatorsLcdDisplay);
         }
 
         void FlightIndicatorsCompute()
@@ -437,16 +444,7 @@ namespace RollPitchYaw
                 return Vector3D.Zero;
 
             return a.Dot(b) / b.LengthSquared() * b;
-        }
-
-        void WriteOutput(StringBuilder output, string fmt, params object[] args)
-        {
-            if (fmt != null && fmt.Length > 0)
-            {
-                output.Append(string.Format(fmt, args));
-                output.Append('\n');
-            }               
-        }
+        }       
 
         public class PIDController
         {
@@ -516,67 +514,84 @@ namespace RollPitchYaw
 
         //
         // LCD library code
-        // IMyTextPanel FindFirstLcd()
-        // List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        // IMyTextPanel FindFirst()
+        // List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
         // void InitDisplays(List<IMyTextPanel> myTextPanels)
         // void InitDisplay(IMyTextPanel myTextPanel)
 
-        Color defaultFontColor = new Color(0, 255, 0);
-        float defaultSize = 1.5f;
-
-        void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+        public class LCDHelper
         {
-            foreach (IMyTextPanel myTextPanel in myTextPanels)
+            public Color defaultFontColor = new Color(150, 30, 50);
+            public float defaultSize = 2;
+            BasicLibrary basicLibrary;
+
+            public LCDHelper(BasicLibrary basicLibrary)
             {
-                myTextPanel.WritePublicText(message, append);
+                this.basicLibrary = basicLibrary;
+            }
+
+            public LCDHelper(BasicLibrary basicLibrary, Color defaultFontColor, float defaultSize = 2)
+            {
+                this.basicLibrary = basicLibrary;
+                this.defaultFontColor = defaultFontColor;
+                this.defaultSize = defaultSize;
+            }
+
+            public void DisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+            {
+                foreach (IMyTextPanel myTextPanel in myTextPanels)
+                {
+                    myTextPanel.WritePublicText(message, append);
+                }
+            }
+
+            // return null if no lcd
+            public IMyTextPanel FindFirst()
+            {
+                IMyTextPanel lcd = basicLibrary.FindFirstBlockByType<IMyTextPanel>();
+                if (lcd != null)
+                {
+                    InitDisplay(lcd);
+                }
+                return lcd;
+            }
+
+            // return all lcd in groups + all lcd by names
+            public List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
+            {
+                List<IMyTextPanel> lcds = basicLibrary.FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
+                InitDisplays(lcds);
+                return lcds;
+            }
+
+
+            public void InitDisplays(List<IMyTextPanel> myTextPanels)
+            {
+                InitDisplays(myTextPanels, defaultFontColor);
+            }
+
+            public void InitDisplay(IMyTextPanel myTextPanel)
+            {
+                InitDisplay(myTextPanel, defaultFontColor);
+            }
+
+            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+            {
+                foreach (IMyTextPanel myTextPanel in myTextPanels)
+                {
+                    InitDisplay(myTextPanel, color);
+                }
+            }
+
+            public void InitDisplay(IMyTextPanel myTextPanel, Color color)
+            {
+                myTextPanel.ShowPublicTextOnScreen();
+                myTextPanel.FontColor = color;
+                myTextPanel.FontSize = defaultSize;
+                myTextPanel.ApplyAction("OnOff_On");
             }
         }
 
-        // return null if no lcd
-        IMyTextPanel FindFirstLcd()
-        {
-            IMyTextPanel lcd = FindFirstBlockByType<IMyTextPanel>();
-            if (lcd != null)
-            {
-                InitDisplay(lcd);
-            }
-            return lcd;
-        }
-
-        // return all lcd in groups + all lcd by names
-        List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
-        {
-            List<IMyTextPanel> lcds = FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
-            InitDisplays(lcds);
-            return lcds;
-        }
-
-
-        void InitDisplays(List<IMyTextPanel> myTextPanels)
-        {
-            InitDisplays(myTextPanels, defaultFontColor);
-        }
-
-        void InitDisplay(IMyTextPanel myTextPanel)
-        {
-            InitDisplay(myTextPanel, defaultFontColor);
-        }
-
-        void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
-        {
-            foreach (IMyTextPanel myTextPanel in myTextPanels)
-            {
-                InitDisplay(myTextPanel, color);
-            }
-        }
-
-        void InitDisplay(IMyTextPanel myTextPanel, Color color)
-        {
-            myTextPanel.ShowPublicTextOnScreen();
-            myTextPanel.FontColor = color;
-            myTextPanel.FontSize = defaultSize;
-            myTextPanel.ApplyAction("OnOff_On");
-        }
 
         //
         // END LCD LIBRARY CODE
@@ -587,78 +602,100 @@ namespace RollPitchYaw
         // BASIC LIBRARY
         //
 
-        T FindFirstBlockByType<T>() where T : class
+        public class BasicLibrary
         {
-            List<T> temporaryList = new List<T>();
-            GridTerminalSystem.GetBlocksOfType(temporaryList);
-            if (temporaryList.Count > 0)
+            IMyGridTerminalSystem GridTerminalSystem;
+            Action<string> Echo;
+
+            public BasicLibrary(IMyGridTerminalSystem GridTerminalSystem, Action<string> Echo)
             {
-                return temporaryList[0];
+                this.GridTerminalSystem = GridTerminalSystem;
+                this.Echo = Echo;
             }
-            return null;
-        }
 
-        List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
-        {
-            List<T> result = new List<T>();
-
-            List<T> temporaryList = new List<T>();
-            List<T> allBlockList = new List<T>();
-            GridTerminalSystem.GetBlocksOfType(allBlockList);
-
-            if (names == null) return result;
-            for (int i = 0; i < names.Length; i++)
+            public T FindFirstBlockByType<T>() where T : class
             {
-                if (names[i].Length == 0)
+                List<T> temporaryList = new List<T>();
+                GridTerminalSystem.GetBlocksOfType(temporaryList);
+                if (temporaryList.Count > 0)
                 {
-                    break;
+                    return temporaryList[0];
                 }
-                IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
-                if (blockGroup != null)
+                return null;
+            }
+
+            public List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
+            {
+                List<T> result = new List<T>();
+
+                List<T> temporaryList = new List<T>();
+                List<T> allBlockList = new List<T>();
+                GridTerminalSystem.GetBlocksOfType(allBlockList);
+
+                if (names == null) return result;
+                for (int i = 0; i < names.Length; i++)
                 {
-                    temporaryList.Clear();
-                    blockGroup.GetBlocksOfType(temporaryList);
-                    if (temporaryList.Count == 0)
+                    if (names[i].Length == 0)
                     {
-                        Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
+                        break;
                     }
-                    result.AddList(temporaryList);
-                }
-                else
-                {
-                    bool found = false;
-                    foreach (T block in allBlockList)
+                    IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
+                    if (blockGroup != null)
                     {
-                        if (((IMyTerminalBlock)block).CustomName == names[i])
+                        temporaryList.Clear();
+                        blockGroup.GetBlocksOfType(temporaryList);
+                        if (temporaryList.Count == 0)
                         {
-                            result.Add(block);
-                            found = true;
-                            break;
+                            Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
                         }
-
+                        result.AddList(temporaryList);
                     }
-                    if (!found)
+                    else
                     {
-                        Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                        bool found = false;
+                        foreach (T block in allBlockList)
+                        {
+                            if (((IMyTerminalBlock)block).CustomName == names[i])
+                            {
+                                result.Add(block);
+                                found = true;
+                                break;
+                            }
+
+                        }
+                        if (!found)
+                        {
+                            Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                        }
                     }
                 }
+                return result;
             }
-            return result;
-        }
 
-        DateTime dt1970 = new DateTime(1970, 1, 1);
-        double GetCurrentTimeInMs()
-        {
-            DateTime time = System.DateTime.Now;
-            TimeSpan timeSpan = time - dt1970;
-            return timeSpan.TotalMilliseconds;
+            public static void AppendFormatted(StringBuilder stringBuilder, string stringToFormat, params object[] args)
+            {
+                if (stringToFormat != null && stringToFormat.Length > 0)
+                {
+                    stringBuilder.Append(string.Format(stringToFormat, args));
+                    stringBuilder.Append('\n');
+                }
+            }
+
+            static DateTime dt1970 = new DateTime(1970, 1, 1);
+            public static double GetCurrentTimeInMs()
+            {
+                DateTime time = System.DateTime.Now;
+                TimeSpan timeSpan = time - dt1970;
+                return timeSpan.TotalMilliseconds;
+            }
         }
 
         //
         // END OF BASIC LIBRARY
         //
 
-       
+
+
 
 
 
@@ -666,7 +703,7 @@ namespace RollPitchYaw
 
         #region post_script
     }
-    
+
 }
 
 #endregion post_script

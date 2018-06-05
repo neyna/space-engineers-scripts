@@ -78,67 +78,84 @@ namespace LcdLib
 
         //
         // LCD library code
-        // IMyTextPanel FindFirstLcd()
-        // List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        // IMyTextPanel FindFirst()
+        // List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
         // void InitDisplays(List<IMyTextPanel> myTextPanels)
         // void InitDisplay(IMyTextPanel myTextPanel)
 
-        Color defaultFontColor = new Color(150, 30, 50);
-        float defaultSize = 2;
-
-        void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+        public class LCDHelper
         {
-            foreach (IMyTextPanel myTextPanel in myTextPanels)
+            public Color defaultFontColor = new Color(150, 30, 50);
+            public float defaultSize = 2;
+            BasicLibrary basicLibrary;
+
+            public LCDHelper(BasicLibrary basicLibrary)
             {
-                myTextPanel.WritePublicText(message, append);
+                this.basicLibrary = basicLibrary;
+            }
+
+            public LCDHelper(BasicLibrary basicLibrary, Color defaultFontColor, float defaultSize=2)
+            {
+                this.basicLibrary = basicLibrary;
+                this.defaultFontColor = defaultFontColor;
+                this.defaultSize = defaultSize;
+            }
+
+            public void DisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+            {
+                foreach (IMyTextPanel myTextPanel in myTextPanels)
+                {
+                    myTextPanel.WritePublicText(message, append);
+                }
+            }
+
+            // return null if no lcd
+            public IMyTextPanel FindFirst()
+            {
+                IMyTextPanel lcd = basicLibrary.FindFirstBlockByType<IMyTextPanel>();
+                if (lcd != null)
+                {
+                    InitDisplay(lcd);
+                }
+                return lcd;
+            }
+
+            // return all lcd in groups + all lcd by names
+            public List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
+            {
+                List<IMyTextPanel> lcds = basicLibrary.FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
+                InitDisplays(lcds);
+                return lcds;
+            }
+
+
+            public void InitDisplays(List<IMyTextPanel> myTextPanels)
+            {
+                InitDisplays(myTextPanels, defaultFontColor);
+            }
+
+            public void InitDisplay(IMyTextPanel myTextPanel)
+            {
+                InitDisplay(myTextPanel, defaultFontColor);
+            }
+
+            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+            {
+                foreach (IMyTextPanel myTextPanel in myTextPanels)
+                {
+                    InitDisplay(myTextPanel, color);
+                }
+            }
+
+            public void InitDisplay(IMyTextPanel myTextPanel, Color color)
+            {
+                myTextPanel.ShowPublicTextOnScreen();
+                myTextPanel.FontColor = color;
+                myTextPanel.FontSize = defaultSize;
+                myTextPanel.ApplyAction("OnOff_On");
             }
         }
-
-        // return null if no lcd
-        IMyTextPanel FindFirstLcd()
-        {
-            IMyTextPanel lcd = FindFirstBlockByType<IMyTextPanel>();
-            if(lcd != null)
-            {
-                InitDisplay(lcd);
-            }            
-            return lcd;
-        }
-
-        // return all lcd in groups + all lcd by names
-        List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
-        {
-            List<IMyTextPanel> lcds = FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
-            InitDisplays(lcds);
-            return lcds;
-        }
-
-
-        void InitDisplays(List<IMyTextPanel> myTextPanels)
-        {
-            InitDisplays(myTextPanels, defaultFontColor);
-        }
-
-        void InitDisplay(IMyTextPanel myTextPanel)
-        {
-            InitDisplay(myTextPanel, defaultFontColor);
-        }
-
-        void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
-        {
-            foreach (IMyTextPanel myTextPanel in myTextPanels)
-            {
-                InitDisplay(myTextPanel, color);
-            }
-        }
-
-        void InitDisplay(IMyTextPanel myTextPanel, Color color)
-        {
-            myTextPanel.ShowPublicTextOnScreen();
-            myTextPanel.FontColor = color;
-            myTextPanel.FontSize = defaultSize;
-            myTextPanel.ApplyAction("OnOff_On");
-        }
+       
 
         //
         // END LCD LIBRARY CODE
@@ -149,71 +166,92 @@ namespace LcdLib
         // BASIC LIBRARY
         //
 
-        T FindFirstBlockByType<T>() where T : class
+        public class BasicLibrary
         {
-            List<T> temporaryList = new List<T>();
-            GridTerminalSystem.GetBlocksOfType(temporaryList);
-            if (temporaryList.Count > 0)
+            IMyGridTerminalSystem GridTerminalSystem;
+            Action<string> Echo;
+
+            public BasicLibrary(IMyGridTerminalSystem GridTerminalSystem, Action<string> Echo)
             {
-                return temporaryList[0];               
-            }            
-            return null;
-        }
+                this.GridTerminalSystem = GridTerminalSystem;
+                this.Echo = Echo;
+            }
 
-        List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
-        {
-            List<T> result = new List<T>();
-
-            List<T> temporaryList = new List<T>();
-            List<T> allBlockList = new List<T>();
-            GridTerminalSystem.GetBlocksOfType(allBlockList);
-
-            if (names == null) return result;
-            for (int i = 0; i < names.Length; i++)
+            public T FindFirstBlockByType<T>() where T : class
             {
-                if (names[i].Length == 0)
+                List<T> temporaryList = new List<T>();
+                GridTerminalSystem.GetBlocksOfType(temporaryList);
+                if (temporaryList.Count > 0)
                 {
-                    break;
+                    return temporaryList[0];
                 }
-                IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
-                if (blockGroup != null)
+                return null;
+            }
+
+            public List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
+            {
+                List<T> result = new List<T>();
+
+                List<T> temporaryList = new List<T>();
+                List<T> allBlockList = new List<T>();
+                GridTerminalSystem.GetBlocksOfType(allBlockList);
+
+                if (names == null) return result;
+                for (int i = 0; i < names.Length; i++)
                 {
-                    temporaryList.Clear();
-                    blockGroup.GetBlocksOfType(temporaryList);
-                    if (temporaryList.Count == 0)
+                    if (names[i].Length == 0)
                     {
-                        Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
+                        break;
                     }
-                    result.AddList(temporaryList);
-                }
-                else
-                {
-                    bool found = false;
-                    foreach (T block in allBlockList)
+                    IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
+                    if (blockGroup != null)
                     {
-                        if (((IMyTerminalBlock)block).CustomName == names[i])
+                        temporaryList.Clear();
+                        blockGroup.GetBlocksOfType(temporaryList);
+                        if (temporaryList.Count == 0)
                         {
-                            result.Add(block);
-                            found = true;
-                            break;
+                            Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
                         }
-
+                        result.AddList(temporaryList);
                     }
-                    if (!found)
+                    else
                     {
-                        Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                        bool found = false;
+                        foreach (T block in allBlockList)
+                        {
+                            if (((IMyTerminalBlock)block).CustomName == names[i])
+                            {
+                                result.Add(block);
+                                found = true;
+                                break;
+                            }
+
+                        }
+                        if (!found)
+                        {
+                            Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                        }
                     }
+                }
+                return result;
+            }
+
+            public static void AppendFormatted(StringBuilder stringBuilder, string stringToFormat, params object[] args)
+            {
+                if (stringToFormat != null && stringToFormat.Length > 0)
+                {
+                    stringBuilder.Append(string.Format(stringToFormat, args));
+                    stringBuilder.Append('\n');
                 }
             }
-            return result;
-        }
 
-        DateTime dt1970 = new DateTime(1970, 1, 1);
-        double GetCurrentTimeInMs()
-        {
-            DateTime time = System.DateTime.Now;
-            TimeSpan timeSpan = time - dt1970;
-            return timeSpan.TotalMilliseconds;
+            static DateTime dt1970 = new DateTime(1970, 1, 1);
+            public static double GetCurrentTimeInMs()
+            {
+                DateTime time = System.DateTime.Now;
+                TimeSpan timeSpan = time - dt1970;
+                return timeSpan.TotalMilliseconds;
+            }
         }
 
         //
