@@ -1,5 +1,4 @@
-﻿using System;
-
+﻿#region pre_script
 /*
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI;
@@ -34,6 +33,7 @@ using Sandbox.Common;
 using Sandbox.Game;
 using VRage.Collections;
 using VRage.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI;
 //using SpaceEngineers.Game.ModAPI.Ingame;
 
 namespace RollPitchYaw
@@ -66,13 +66,19 @@ namespace RollPitchYaw
         */
 
 
+        // TODO
+        // cockpit must have its bottom towards gravity, add parameter to tell which direction the cockpit is facing (TOP, BOTTOM, HORIZONTAL)
 
+        #endregion pre_script
+       
 
         // config
         string[] flightIndicatorsLcdNames = {""};
         string flightIndicatorsControllerName = "";
 
         // end of config
+        enum FlightMode {CALIBRATION, STABILIZATION, STANDY};
+        FlightMode flightIndicatorsFlightMode = FlightMode.STANDY;
         List<IMyTextPanel> flightIndicatorsLcdDisplay = new List<IMyTextPanel>();
         IMyShipController flightIndicatorsShipController = null;
         double flightIndicatorsShipControllerCurrentSpeed = 0;
@@ -82,40 +88,208 @@ namespace RollPitchYaw
         double flightIndicatorsYaw;
         double flightIndicatorsElevation = 0;
 
+        List<IMyGyro> flightIndicatorsGyroscopes = new List<IMyGyro>();
+        PIDController flightIndicatorsPID = new PIDController(0.06, 0, 0.01);
+        float flightIndicatorsGyroscopeMaximumGyroscopePower = 0.3f;
+        float flightIndicatorsGyroscopeMaximumErrorMargin = 0.001f;
+        float flightIndicatorsDesiredAngle = 0;
+        string flightIndicatorsWarningMessage = null;
+
         const double flightIndicatorsRad2deg = 180 / Math.PI;
         const double flightIndicatorsDeg2rad = Math.PI / 180;
 
         public Program()
         {
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;
+            Runtime.UpdateFrequency = UpdateFrequency.Update10;            
         }
 
         public void Main(string argument, UpdateType updateSource)
-        {
+        {            
+            if(argument!=null && argument.ToLower().Equals("stabilize_on"))
+            {                
+                flightIndicatorsFlightMode = FlightMode.STABILIZATION;
+                Me.CustomData = "";
+                firstRun = true;
+                FlightIndicatorsFindAndInitGyroscopesOverdrive();
+                flightIndicatorsPID.Reset();
+            } else if(argument != null && argument.ToLower().Equals("stabilize_off"))
+            {
+                flightIndicatorsFlightMode = FlightMode.STANDY;
+                //Me.CustomData = "";               
+                FlightIndicatorsReleaseGyroscopes();
+            } else if (argument != null && argument.ToLower().Equals("calibration"))
+            {
+                Runtime.UpdateFrequency = UpdateFrequency.Update1;
+                Me.CustomData = "";
+                flightIndicatorsFlightMode = FlightMode.CALIBRATION;
+                // TODO bring back the ship to 0/0/0 for optimal test
+                FlightIndicatorsFindAndInitGyroscopesOverdrive();
+            } else if(argument != null && argument.ToLower().Equals("abort_calibration"))
+            {
+                //Me.CustomData = "";
+                EndCalibrationConfig();
+            }
+
             if (!TryInit())
             {
                 return;
             }
-            Compute();
-            Display();
+            FlightIndicatorsCompute();
+            if(flightIndicatorsFlightMode == FlightMode.STABILIZATION)
+            {
+                FlightIndicatorsCorrectRollAndPitch();
+            } else if(flightIndicatorsFlightMode == FlightMode.CALIBRATION)
+            {
+                FlightIndicatorsCalibration();
+            }
+                
+            FlightIndicatorsDisplay();            
         }
 
-        private bool TryInit()
+        void EndCalibrationConfig()
+        {
+            Runtime.UpdateFrequency = UpdateFrequency.Update10;
+            flightIndicatorsFlightMode = FlightMode.STANDY;
+            FlightIndicatorsReleaseGyroscopes();
+        }     
+  
+
+        void FlightIndicatorsCalibration()
+        {
+       
+        }
+
+       
+        void SetGyroscopesYawOverride(float overrride)
+        {
+            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
+            {
+                gyroscope.Yaw = overrride;
+            }
+        }
+
+
+        float t_gyroRoll;
+        float t_gyroPitch;
+        float t_gyroYaw;
+
+        bool firstRun = true;        
+ 
+        double error = 0;
+        double command = 0;
+        double lastTime = 0;
+
+
+        void FlightIndicatorsCorrectRollAndPitch()
+        {            
+            float maxYaw = flightIndicatorsGyroscopes[0].GetMaximum<float>("Yaw") * flightIndicatorsGyroscopeMaximumGyroscopePower;                      
+            
+            double tempYaw= flightIndicatorsYaw;
+            if (tempYaw > 180)
+            {
+                tempYaw -= 360;
+            }
+                                    
+            error = 0;            
+            double currentTime = GetCurrentTimeInMs();
+            double timeStep = currentTime - lastTime;
+
+            // sometimes time difference is 0 (because system is caching getTime calls), skip computing for this time
+            if(timeStep==0)
+            {
+                return;
+            }
+
+            if(!firstRun)
+            {
+                error = tempYaw - flightIndicatorsDesiredAngle;                
+                if (Math.Abs(error)> flightIndicatorsGyroscopeMaximumErrorMargin)
+                {
+                    // using old command + error correction given by PID ? or PID gives corrected value?
+                    command = - flightIndicatorsPID.Control(error, timeStep / 1000);
+                    command = MathHelper.Clamp(command, -maxYaw, maxYaw);
+                    ApplyGyroOverride(0, command, 0, flightIndicatorsGyroscopes, flightIndicatorsShipController);
+                } else
+                {                    
+                    ApplyGyroOverride(0, 0, 0, flightIndicatorsGyroscopes, flightIndicatorsShipController);
+                }
+            } else
+            {
+                command = (tempYaw > 0) ? -maxYaw / 100 : maxYaw / 100;
+                firstRun = false;
+            }
+            //Me.CustomData += $"command : {Math.Round(command,4)} - timeStep : {Math.Round(timeStep,0)} - error : {Math.Round(Math.Abs(error),2)}\n";
+            
+            t_gyroPitch = flightIndicatorsGyroscopes[0].Pitch;
+            t_gyroRoll = flightIndicatorsGyroscopes[0].Roll;
+            t_gyroYaw = flightIndicatorsGyroscopes[0].Yaw;
+            lastTime = GetCurrentTimeInMs();
+        }
+
+        void FlightIndicatorsFindAndInitGyroscopesOverdrive()
+        {
+            if (flightIndicatorsGyroscopes.Count == 0)
+            {
+                GridTerminalSystem.GetBlocksOfType(flightIndicatorsGyroscopes);
+                if (flightIndicatorsGyroscopes.Count == 0)
+                {
+                    flightIndicatorsWarningMessage = "Warning no gyro found.";
+                    Echo(flightIndicatorsWarningMessage);
+                    return;
+                }
+                FlightIndicatorsInitGyroscopesOverride();
+            }
+        }
+
+        void FlightIndicatorsInitGyroscopesOverride()
+        {
+            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
+            {
+                gyroscope.GyroPower = 1.0f; // set power to 100%
+                gyroscope.GyroOverride = true;
+                gyroscope.Pitch = 0;
+                gyroscope.Roll = 0;
+                gyroscope.Yaw = 0;
+                gyroscope.ApplyAction("OnOff_On");
+            }
+        }
+
+        void FlightIndicatorsReleaseGyroscopes()
+        {
+            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
+            {   
+                gyroscope.Roll = 0;
+                gyroscope.Pitch = 0;
+                gyroscope.Yaw = 0;
+                gyroscope.GyroOverride = false;
+                gyroscope.GyroPower = 1.0f;
+            }
+        }        
+
+        bool TryInit()
         {
             // LCD
             if(flightIndicatorsLcdDisplay.Count==0)
             {
-                flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
-                if (flightIndicatorsLcdDisplay.Count == 0)
+                if(flightIndicatorsLcdNames!=null && flightIndicatorsLcdNames.Length>0 && flightIndicatorsLcdNames[0].Length>0)
                 {
-                    flightIndicatorsLcdDisplay.Add(FindFirstLcd());
+                    flightIndicatorsLcdDisplay.AddList(FindLcds(flightIndicatorsLcdNames));
+                } else
+                {
+                    IMyTextPanel textPanel = FindFirstLcd();
+                    if (textPanel != null)
+                    {
+                        flightIndicatorsLcdDisplay.Add(textPanel);
+                    } else
+                    {
+                        Echo("Cound not find any LCD");                        
+                    }
                 }
-
-                if (flightIndicatorsLcdDisplay.Count == 0)
+                if(flightIndicatorsLcdDisplay.Count==0)
                 {
-                    Echo("Cound not find any LCD");
                     return false;
                 }
+                
             }
 
             
@@ -162,18 +336,31 @@ namespace RollPitchYaw
             return true;
         }
 
-        private void Display()
+        void FlightIndicatorsDisplay()
         {
             StringBuilder stringBuilder = new StringBuilder();
-            WriteOutput(stringBuilder, "Speed {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
-            WriteOutput(stringBuilder, "Pitch {0}°", Math.Round(flightIndicatorsPitch, 2));
-            WriteOutput(stringBuilder, "Roll {0}°", Math.Round(flightIndicatorsRoll, 2));
-            WriteOutput(stringBuilder, "Yaw {0}°", Math.Round(flightIndicatorsYaw, 2));
+            WriteOutput(stringBuilder, "Speed     {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
+            WriteOutput(stringBuilder, "Pitch       {0}°", Math.Round(flightIndicatorsPitch, 2));
+            WriteOutput(stringBuilder, "Roll         {0}°", Math.Round(flightIndicatorsRoll, 2));
+            WriteOutput(stringBuilder, "Yaw        {0}°", Math.Round(flightIndicatorsYaw, 2));
             WriteOutput(stringBuilder, "Elevation {0} m", Math.Round(flightIndicatorsElevation, 0));
+            WriteOutput(stringBuilder, flightIndicatorsWarningMessage);            
+            
+            if (flightIndicatorsFlightMode == FlightMode.STABILIZATION)
+            {
+                WriteOutput(stringBuilder, "Auto-correcting roll and pitch");
+                WriteOutput(stringBuilder, "Pitch overdrive {0}", Math.Round(t_gyroPitch, 4));
+                WriteOutput(stringBuilder, "Roll overdrive  {0}", Math.Round(t_gyroRoll, 4));
+                WriteOutput(stringBuilder, "Yaw overdrive   {0}", Math.Round(t_gyroYaw, 4));
+                WriteOutput(stringBuilder, "Error           {0}", Math.Round(error, 4));
+                WriteOutput(stringBuilder, "Command         {0}", Math.Round(command, 4));
+
+                
+            }
             LcdDisplayMessage(stringBuilder.ToString(), flightIndicatorsLcdDisplay);
         }
 
-        private void Compute()
+        void FlightIndicatorsCompute()
         {
             // speed
             var velocityVec = flightIndicatorsShipController.GetShipVelocities().LinearVelocity;
@@ -186,8 +373,8 @@ namespace RollPitchYaw
             Vector3D shipDownVec = flightIndicatorsShipController.WorldMatrix.Down;
             Vector3D gravityVec = flightIndicatorsShipController.GetNaturalGravity();
             Vector3D planetRelativeLeftVec = shipForwardVec.Cross(gravityVec);
-
-            // il est possible de prendre planetRelativeLeftVec comme vector nord absolu à l'init de programme
+         
+            // could use next line for North Vector but we use left vector of the ship at init.
             //Vector3D absoluteNorthVec = new Vector3D(0, -1, 0); // new Vector3D(0.342063708833718, -0.704407897782847, -0.621934025954579); if not planet worlds
 
             if (gravityVec.LengthSquared() == 0)
@@ -221,7 +408,12 @@ namespace RollPitchYaw
             flightIndicatorsYaw = VectorAngleBetween(forwardProjPlaneVec, relativeNorthVec) * flightIndicatorsRad2deg;
             if (shipForwardVec.Dot(relativeEastVec) < 0)
             {
-                flightIndicatorsYaw = 360 - flightIndicatorsYaw; //because of how the angle is measured  
+                flightIndicatorsYaw = 360.0d - flightIndicatorsYaw; //because of how the angle is measured  
+                /*
+                if(flightIndicatorsYaw>180)
+                {
+                    flightIndicatorsYaw -= 360;
+                }*/
             }
 
             if(!flightIndicatorsShipController.TryGetPlanetElevation(MyPlanetElevation.Surface, out flightIndicatorsElevation))
@@ -249,10 +441,77 @@ namespace RollPitchYaw
 
         void WriteOutput(StringBuilder output, string fmt, params object[] args)
         {
-            output.Append(string.Format(fmt, args));
-            output.Append('\n');
+            if (fmt != null && fmt.Length > 0)
+            {
+                output.Append(string.Format(fmt, args));
+                output.Append('\n');
+            }               
         }
 
+        public class PIDController
+        {
+            double p = 0;
+            double i = 0;
+            double d = 0;
+
+            double errorIntegral = 0;
+            double lastError = 0;
+
+            bool firstRun = true;
+
+            public PIDController(double p, double i, double d)
+            {
+                this.p = p;
+                this.i = i;
+                this.d = d;
+            }
+
+            public double Control(double error, double timeStep)
+            {
+                double errorDerivative;
+
+                if (firstRun)
+                {
+                    errorDerivative = 0;
+                    firstRun = false;
+                }
+                else
+                {
+                    errorDerivative = (error - lastError) / timeStep;
+                }
+
+                errorIntegral += error * timeStep;
+
+                lastError = error;
+
+                return p * error + i * errorIntegral + d * errorDerivative;
+            }
+
+            public void Reset()
+            {
+                errorIntegral = 0;
+                lastError = 0;
+                firstRun = true;
+            }
+        }
+
+        // thanks Whip for your help
+        //Whip's ApplyGyroOverride Method v9 - 8/19/17
+        void ApplyGyroOverride(double pitch_speed, double yaw_speed, double roll_speed, List<IMyGyro> gyro_list, IMyTerminalBlock reference)
+        {
+            var rotationVec = new Vector3D(-pitch_speed, yaw_speed, roll_speed); //because keen does some weird stuff with signs
+            var shipMatrix = reference.WorldMatrix;
+            var relativeRotationVec = Vector3D.TransformNormal(rotationVec, shipMatrix);
+            foreach (var thisGyro in gyro_list)
+            {
+                var gyroMatrix = thisGyro.WorldMatrix;
+                var transformedRotationVec = Vector3D.TransformNormal(relativeRotationVec, Matrix.Transpose(gyroMatrix));
+                thisGyro.Pitch = (float)transformedRotationVec.X;
+                thisGyro.Yaw = (float)transformedRotationVec.Y;
+                thisGyro.Roll = (float)transformedRotationVec.Z;
+                thisGyro.GyroOverride = true;
+            }
+        }
 
 
         //
@@ -262,9 +521,10 @@ namespace RollPitchYaw
         // void InitDisplays(List<IMyTextPanel> myTextPanels)
         // void InitDisplay(IMyTextPanel myTextPanel)
 
-        Color defaultFontColor = new Color(150, 30, 50);
+        Color defaultFontColor = new Color(0, 255, 0);
+        float defaultSize = 1.5f;
 
-        private void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+        void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
         {
             foreach (IMyTextPanel myTextPanel in myTextPanels)
             {
@@ -273,78 +533,36 @@ namespace RollPitchYaw
         }
 
         // return null if no lcd
-        private IMyTextPanel FindFirstLcd()
+        IMyTextPanel FindFirstLcd()
         {
-            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
-            if (temporaryLcdList.Count > 0)
+            IMyTextPanel lcd = FindFirstBlockByType<IMyTextPanel>();
+            if (lcd != null)
             {
-                return temporaryLcdList[0];
+                InitDisplay(lcd);
             }
-            return null;
+            return lcd;
         }
 
         // return all lcd in groups + all lcd by names
-        private List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
         {
-            List<IMyTextPanel> lcds = new List<IMyTextPanel>();
-            List<IMyTextPanel> temporaryLcdList = new List<IMyTextPanel>();
-
-            List<IMyTextPanel> allLcdList = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(allLcdList);
-            // get groups
-            for (int i = 0; i < lcdGoupsAndNames.Length; i++)
-            {
-                if (lcdGoupsAndNames[i].Length == 0)
-                {
-                    break;
-                }
-                IMyBlockGroup lcdGroup = GridTerminalSystem.GetBlockGroupWithName(lcdGoupsAndNames[i]);
-                if (lcdGroup != null)
-                {
-                    temporaryLcdList.Clear();
-                    lcdGroup.GetBlocksOfType<IMyTextPanel>(temporaryLcdList);
-                    if (temporaryLcdList.Count == 0)
-                    {
-                        Echo("Warning : group " + lcdGoupsAndNames[i] + " has no LCD.");
-                    }
-                    lcds.AddList(temporaryLcdList);
-                }
-                else
-                {
-                    bool found = false;
-                    foreach (IMyTextPanel myTextPanel in allLcdList)
-                    {
-                        if (myTextPanel.CustomName == lcdGoupsAndNames[i])
-                        {
-                            lcds.Add(myTextPanel);
-                            found = true;
-                            break;
-                        }
-
-                    }
-                    if (!found)
-                    {
-                        Echo("Warning : LCD or group named\n" + lcdGoupsAndNames[i] + " not found.");
-                    }
-                }
-            }
+            List<IMyTextPanel> lcds = FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
             InitDisplays(lcds);
             return lcds;
         }
 
 
-        private void InitDisplays(List<IMyTextPanel> myTextPanels)
+        void InitDisplays(List<IMyTextPanel> myTextPanels)
         {
             InitDisplays(myTextPanels, defaultFontColor);
         }
 
-        private void InitDisplay(IMyTextPanel myTextPanel)
+        void InitDisplay(IMyTextPanel myTextPanel)
         {
             InitDisplay(myTextPanel, defaultFontColor);
         }
 
-        private void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+        void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
         {
             foreach (IMyTextPanel myTextPanel in myTextPanels)
             {
@@ -352,10 +570,11 @@ namespace RollPitchYaw
             }
         }
 
-        private void InitDisplay(IMyTextPanel myTextPanel, Color color)
+        void InitDisplay(IMyTextPanel myTextPanel, Color color)
         {
+            myTextPanel.ShowPublicTextOnScreen();
             myTextPanel.FontColor = color;
-            myTextPanel.FontSize = (Single)2;
+            myTextPanel.FontSize = defaultSize;
             myTextPanel.ApplyAction("OnOff_On");
         }
 
@@ -364,9 +583,90 @@ namespace RollPitchYaw
         //
 
 
+        //
+        // BASIC LIBRARY
+        //
+
+        T FindFirstBlockByType<T>() where T : class
+        {
+            List<T> temporaryList = new List<T>();
+            GridTerminalSystem.GetBlocksOfType(temporaryList);
+            if (temporaryList.Count > 0)
+            {
+                return temporaryList[0];
+            }
+            return null;
+        }
+
+        List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
+        {
+            List<T> result = new List<T>();
+
+            List<T> temporaryList = new List<T>();
+            List<T> allBlockList = new List<T>();
+            GridTerminalSystem.GetBlocksOfType(allBlockList);
+
+            if (names == null) return result;
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (names[i].Length == 0)
+                {
+                    break;
+                }
+                IMyBlockGroup blockGroup = GridTerminalSystem.GetBlockGroupWithName(names[i]);
+                if (blockGroup != null)
+                {
+                    temporaryList.Clear();
+                    blockGroup.GetBlocksOfType(temporaryList);
+                    if (temporaryList.Count == 0)
+                    {
+                        Echo($"Warning : group {names[i]} has no {typeOfBlockForMessage}.");
+                    }
+                    result.AddList(temporaryList);
+                }
+                else
+                {
+                    bool found = false;
+                    foreach (T block in allBlockList)
+                    {
+                        if (((IMyTerminalBlock)block).CustomName == names[i])
+                        {
+                            result.Add(block);
+                            found = true;
+                            break;
+                        }
+
+                    }
+                    if (!found)
+                    {
+                        Echo($"Warning : {typeOfBlockForMessage} or group named\n{names[i]} not found.");
+                    }
+                }
+            }
+            return result;
+        }
+
+        DateTime dt1970 = new DateTime(1970, 1, 1);
+        double GetCurrentTimeInMs()
+        {
+            DateTime time = System.DateTime.Now;
+            TimeSpan timeSpan = time - dt1970;
+            return timeSpan.TotalMilliseconds;
+        }
+
+        //
+        // END OF BASIC LIBRARY
+        //
+
+       
 
 
 
+
+
+        #region post_script
     }
-
+    
 }
+
+#endregion post_script
