@@ -73,21 +73,20 @@ namespace LcdLib
          * 
          */
 
-
+        
+  
 
 
         //
         // LCD library code
-        // IMyTextPanel FindFirst()
-        // List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
-        // void InitDisplays(List<IMyTextPanel> myTextPanels)
-        // void InitDisplay(IMyTextPanel myTextPanel)
+        //
 
         public class LCDHelper
         {
             public Color defaultFontColor = new Color(150, 30, 50);
             public float defaultSize = 2;
             BasicLibrary basicLibrary;
+            StringBuilder messageBuffer = new StringBuilder();
 
             public LCDHelper(BasicLibrary basicLibrary)
             {
@@ -154,8 +153,25 @@ namespace LcdLib
                 myTextPanel.FontSize = defaultSize;
                 myTextPanel.ApplyAction("OnOff_On");
             }
+
+            
+            public void ClearMessageBuffer()
+            {
+                messageBuffer.Clear();
+            }
+
+            public void AppendMessageBuffer(string text)
+            {
+                messageBuffer.Append(text);                
+            }
+
+            // this method does not have append boolean parameter because the plan is to use it only with a complete screen message to prevent flickering
+            public void DisplayMessageBuffer(List<IMyTextPanel> myTextPanels)
+            {
+                DisplayMessage(messageBuffer.ToString(), myTextPanels);
+            }
         }
-       
+
 
         //
         // END LCD LIBRARY CODE
@@ -169,13 +185,13 @@ namespace LcdLib
         public class BasicLibrary
         {
             IMyGridTerminalSystem GridTerminalSystem;
-            Action<string> Echo;
+            public Action<string> Echo;
 
             public BasicLibrary(IMyGridTerminalSystem GridTerminalSystem, Action<string> Echo)
             {
                 this.GridTerminalSystem = GridTerminalSystem;
                 this.Echo = Echo;
-            }
+            }           
 
             public T FindFirstBlockByType<T>() where T : class
             {
@@ -234,6 +250,11 @@ namespace LcdLib
                     }
                 }
                 return result;
+            }
+
+            public void GetBlocksOfType<T>(List<T> list, Func<T, bool> collect = null) where T:class
+            {
+                GridTerminalSystem.GetBlocksOfType(list, collect);
             }
 
             public static void AppendFormatted(StringBuilder stringBuilder, string stringToFormat, params object[] args)

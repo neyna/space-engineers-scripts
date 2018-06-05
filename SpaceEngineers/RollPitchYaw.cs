@@ -77,32 +77,20 @@ namespace RollPitchYaw
         string flightIndicatorsControllerName = "";
 
         // end of config
+
         enum FlightMode {CALIBRATION, STABILIZATION, STANDY};
         FlightMode flightIndicatorsFlightMode = FlightMode.STANDY;
         List<IMyTextPanel> flightIndicatorsLcdDisplay = new List<IMyTextPanel>();
         IMyShipController flightIndicatorsShipController = null;
-        double flightIndicatorsShipControllerCurrentSpeed = 0;
-        Vector3D flightIndicatorsShipControllerAbsoluteNorthVec;
-        double flightIndicatorsPitch;
-        double flightIndicatorsRoll;
-        double flightIndicatorsYaw;
-        double flightIndicatorsElevation = 0;
 
-        List<IMyGyro> flightIndicatorsGyroscopes = new List<IMyGyro>();
-        const double pid_p = 0.06f;
-        const double pid_i = 0.0f;
-        const double pid_d = 0.01f;
-        PIDController flightIndicatorsPID = new PIDController(pid_p, pid_i, pid_d);
-        float flightIndicatorsGyroscopeMaximumGyroscopePower = 1.0f;
-        float flightIndicatorsGyroscopeMaximumErrorMargin = 0.001f;
-        float flightIndicatorsDesiredAngle = 0;
-        string flightIndicatorsWarningMessage = null;
-
-        const double flightIndicatorsRad2deg = 180 / Math.PI;
-        const double flightIndicatorsDeg2rad = Math.PI / 180;
+        const double pidP = 0.06f;
+        const double pidI = 0.0f;
+        const double pidD = 0.01f;
 
         BasicLibrary basicLibrary;
         LCDHelper lcdHelper;
+        FlightIndicators flightIndicators;
+        FightStabilizator fightStabilizator;
 
         public Program()
         {
@@ -112,167 +100,364 @@ namespace RollPitchYaw
         }
 
         public void Main(string argument, UpdateType updateSource)
-        {            
-            if(argument!=null && argument.ToLower().Equals("stabilize_on"))
-            {                
-                flightIndicatorsFlightMode = FlightMode.STABILIZATION;
-                Me.CustomData = "";
-                firstRun = true;
-                FlightIndicatorsFindAndInitGyroscopesOverdrive();
-                flightIndicatorsPID.Reset();
-            } else if(argument != null && argument.ToLower().Equals("stabilize_off"))
-            {
-                flightIndicatorsFlightMode = FlightMode.STANDY;
-                //Me.CustomData = "";               
-                FlightIndicatorsReleaseGyroscopes();
-            } else if (argument != null && argument.ToLower().Equals("calibration"))
-            {
-                Runtime.UpdateFrequency = UpdateFrequency.Update1;
-                Me.CustomData = "";
-                flightIndicatorsFlightMode = FlightMode.CALIBRATION;
-                // TODO bring back the ship to 0/0/0 for optimal test
-                FlightIndicatorsFindAndInitGyroscopesOverdrive();
-            } else if(argument != null && argument.ToLower().Equals("abort_calibration"))
-            {
-                //Me.CustomData = "";
-                EndCalibrationConfig();
-            }
-
+        {
             if (!TryInit())
             {
                 return;
             }
-            FlightIndicatorsCompute();
+
+            if (argument!=null && argument.ToLower().Equals("stabilize_on"))
+            {                
+                flightIndicatorsFlightMode = FlightMode.STABILIZATION;
+                Me.CustomData = "";
+                fightStabilizator.Reset();
+            } else if(argument != null && argument.ToLower().Equals("stabilize_off"))
+            {
+                flightIndicatorsFlightMode = FlightMode.STANDY;                    
+                fightStabilizator.Release();                
+            } else if (argument != null && argument.ToLower().Equals("calibration"))
+            {                
+                flightIndicatorsFlightMode = FlightMode.CALIBRATION;
+                // TODO bring back the ship to 0/0/0 for optimal test               
+            } else if(argument != null && argument.ToLower().Equals("abort_calibration"))
+            {                
+                flightIndicatorsFlightMode = FlightMode.STANDY;
+            }
+            
+
+            flightIndicators.Compute();
             if(flightIndicatorsFlightMode == FlightMode.STABILIZATION)
             {
-                FlightIndicatorsCorrectRollAndPitch();
+                fightStabilizator.CorrectRollAndPitch();
             } else if(flightIndicatorsFlightMode == FlightMode.CALIBRATION)
             {
-                FlightIndicatorsCalibration();
+                // TODO
             }
-                
-            FlightIndicatorsDisplay();            
+
+            lcdHelper.ClearMessageBuffer();
+            lcdHelper.AppendMessageBuffer(flightIndicators.DisplayText());
+            if (flightIndicatorsFlightMode == FlightMode.STABILIZATION)
+            {
+                lcdHelper.AppendMessageBuffer(fightStabilizator.DisplayText());
+            }             
+            lcdHelper.DisplayMessageBuffer(flightIndicatorsLcdDisplay);
         }
 
-        void EndCalibrationConfig()
+        public class FlightIndicators
         {
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;
-            flightIndicatorsFlightMode = FlightMode.STANDY;
-            FlightIndicatorsReleaseGyroscopes();
-        }     
-  
+            IMyShipController shipController;
+            Action<string> Echo;
+            List<IMyTextPanel> lcdDisplays = null;
+            private LCDHelper lcdHelper;
+            Vector3D absoluteNorthVector;
 
-        void FlightIndicatorsCalibration()
-        {
-       
-        }
+            public double CurrentSpeed { get; private set; } = 0;
+            public double Pitch { get; private set; } = 0;
+            public double Roll { get; private set; } = 0;
+            public double Yaw { get; private set; } = 0;
+            public double Elevation { get; private set; } = 0;
 
-       
-        void SetGyroscopesYawOverride(float overrride)
-        {
-            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
+            const double rad2deg = 180 / Math.PI;
+
+            public FlightIndicators(IMyShipController shipController, Action<String> Echo, List<IMyTextPanel> lcdDisplays = null, LCDHelper lcdHelper =null)
             {
-                gyroscope.Yaw = overrride;
-            }
-        }
+                this.shipController = shipController;
+                this.Echo = Echo;
+                this.lcdDisplays = lcdDisplays;
+                this.lcdHelper = lcdHelper;
 
-
-        float t_gyroRoll;
-        float t_gyroPitch;
-        float t_gyroYaw;
-
-        bool firstRun = true;        
- 
-        double error = 0;
-        double command = 0;
-        double lastTime = 0;
-
-
-        void FlightIndicatorsCorrectRollAndPitch()
-        {            
-            float maxYaw = flightIndicatorsGyroscopes[0].GetMaximum<float>("Yaw") * flightIndicatorsGyroscopeMaximumGyroscopePower;                      
-            
-            double tempYaw= flightIndicatorsYaw;
-            if (tempYaw > 180)
-            {
-                tempYaw -= 360;
-            }
-                                    
-            error = 0;            
-            double currentTime = BasicLibrary.GetCurrentTimeInMs();
-            double timeStep = currentTime - lastTime;
-
-            // sometimes time difference is 0 (because system is caching getTime calls), skip computing for this time
-            if(timeStep==0)
-            {
-                return;
+                // compute absoluteNorthVector, we compute a world left vector of the cockpit as absolute north
+                // we could use new Vector3D(0, -1, 0); or new Vector3D(0.342063708833718, -0.704407897782847, -0.621934025954579); if not planet worlds but needs additional config
+                Vector3D shipForwardVector = shipController.WorldMatrix.Forward;
+                Vector3D gravityVector = shipController.GetNaturalGravity();
+                Vector3D planetRelativeLeftVector = shipForwardVector.Cross(gravityVector);
+                absoluteNorthVector = planetRelativeLeftVector;
             }
 
-            if(!firstRun)
+            public void Compute()
             {
-                error = tempYaw - flightIndicatorsDesiredAngle;                
-                if (Math.Abs(error)> flightIndicatorsGyroscopeMaximumErrorMargin)
+                // speed
+                var velocityVector = shipController.GetShipVelocities().LinearVelocity;
+                //CurrentSpeed = velocityVec.Length(); //raw speed of ship 
+                CurrentSpeed = shipController.GetShipSpeed();
+
+                // roll pitch yaw
+                Vector3D shipForwardVector = shipController.WorldMatrix.Forward;
+                Vector3D shipLeftVector = shipController.WorldMatrix.Left;
+                Vector3D shipDownVector = shipController.WorldMatrix.Down;
+                Vector3D gravityVector = shipController.GetNaturalGravity();
+                Vector3D planetRelativeLeftVector = shipForwardVector.Cross(gravityVector);               
+
+                if (gravityVector.LengthSquared() == 0)
                 {
-                    // using old command + error correction given by PID ? or PID gives corrected value?
-                    command = - flightIndicatorsPID.Control(error, timeStep / 1000);
-                    command = MathHelper.Clamp(command, -maxYaw, maxYaw);
-                    ApplyGyroOverride(0, command, 0, flightIndicatorsGyroscopes, flightIndicatorsShipController);
-                } else
-                {                    
-                    ApplyGyroOverride(0, 0, 0, flightIndicatorsGyroscopes, flightIndicatorsShipController);
-                }
-            } else
-            {
-                command = (tempYaw > 0) ? -maxYaw / 100 : maxYaw / 100;
-                firstRun = false;
-            }
-            //Me.CustomData += $"command : {Math.Round(command,4)} - timeStep : {Math.Round(timeStep,0)} - error : {Math.Round(Math.Abs(error),2)}\n";
-            
-            t_gyroPitch = flightIndicatorsGyroscopes[0].Pitch;
-            t_gyroRoll = flightIndicatorsGyroscopes[0].Roll;
-            t_gyroYaw = flightIndicatorsGyroscopes[0].Yaw;
-            lastTime = BasicLibrary.GetCurrentTimeInMs();
-        }
-
-        void FlightIndicatorsFindAndInitGyroscopesOverdrive()
-        {
-            if (flightIndicatorsGyroscopes.Count == 0)
-            {
-                GridTerminalSystem.GetBlocksOfType(flightIndicatorsGyroscopes);
-                if (flightIndicatorsGyroscopes.Count == 0)
-                {
-                    flightIndicatorsWarningMessage = "Warning no gyro found.";
-                    Echo(flightIndicatorsWarningMessage);
+                    Echo("No natural gravity field detected");
+                    Pitch = 0;
+                    Roll = 0;
+                    Yaw = 0;
+                    Elevation = 0;
                     return;
                 }
-                FlightIndicatorsInitGyroscopesOverride();
-            }
-        }
+                // Roll
+                Roll = VectorHelper.VectorAngleBetween(shipLeftVector, planetRelativeLeftVector) * rad2deg * Math.Sign(shipLeftVector.Dot(gravityVector));
+                if (Roll > 90 || Roll < -90)
+                {
+                    Roll = 180 - Roll;
+                }
+                // Pitch
+                Pitch = VectorHelper.VectorAngleBetween(shipForwardVector, gravityVector) * rad2deg; //angle from nose direction to gravity 
+                Pitch -= 90; // value computed is 90 degrees if pitch = 0
+                // Yaw
+                Vector3D relativeEastVector = gravityVector.Cross(absoluteNorthVector);                
+                Vector3D relativeNorthVector = relativeEastVector.Cross(gravityVector);
+                Vector3D forwardProjectUp = VectorHelper.VectorProjection(shipForwardVector, gravityVector);
+                Vector3D forwardProjPlaneVector = shipForwardVector - forwardProjectUp;
 
-        void FlightIndicatorsInitGyroscopesOverride()
-        {
-            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
+                //find angle from abs north to projected forward vector measured clockwise  
+                Yaw = VectorHelper.VectorAngleBetween(forwardProjPlaneVector, relativeNorthVector) * rad2deg;
+                if (shipForwardVector.Dot(relativeEastVector) < 0)
+                {
+                    Yaw = 360.0d - Yaw; //because of how the angle is measured                                                                          
+                }
+
+                double tempElevation = 0;
+                if (!shipController.TryGetPlanetElevation(MyPlanetElevation.Surface, out tempElevation))
+                {
+                    Elevation = -1; //error, no gravity field is detected earlier, so it's another kind of problem
+                }
+                else
+                {
+                    Elevation = tempElevation;
+                }
+
+            }
+
+            public string DisplayText()
             {
-                gyroscope.GyroPower = 1.0f; // set power to 100%
-                gyroscope.GyroOverride = true;
-                gyroscope.Pitch = 0;
-                gyroscope.Roll = 0;
-                gyroscope.Yaw = 0;
-                gyroscope.ApplyAction("OnOff_On");
+                StringBuilder stringBuilder = new StringBuilder();
+
+                BasicLibrary.AppendFormatted(stringBuilder, "Speed     {0} m/s", Math.Round(CurrentSpeed, 2));
+                BasicLibrary.AppendFormatted(stringBuilder, "Pitch       {0}°", Math.Round(Pitch, 2));
+                BasicLibrary.AppendFormatted(stringBuilder, "Roll         {0}°", Math.Round(Roll, 2));
+                BasicLibrary.AppendFormatted(stringBuilder, "Yaw        {0}°", Math.Round(Yaw, 2));
+                BasicLibrary.AppendFormatted(stringBuilder, "Elevation {0} m", Math.Round(Elevation, 0));
+
+                return stringBuilder.ToString();
+            }
+
+            public void Display()
+            {
+                if(lcdHelper == null || lcdDisplays == null)
+                {
+                    Echo("Can't diplay, LCD or LCDHelper not set");
+                    return;
+                }                             
+              
+                lcdHelper.DisplayMessage(DisplayText(), lcdDisplays);
+            }
+
+        }
+
+        public class FightStabilizator
+        {
+            private FlightIndicators flightIndicators;
+            public Action<string> Echo;
+            BasicLibrary basicLibrary;
+            IMyShipController shipController;
+            PIDController pid;
+
+            float gyroscopeOverridedRoll = 0;
+            float gyroscopeOverridedPitch = 0;
+            float gyroscopeOverridedYaw = 0;
+
+            bool firstRun = true;            
+            double lastTime = 0;
+
+            float gyroscopeMaximumGyroscopePower = 1.0f;
+            float gyroscopeMaximumErrorMargin = 0.001f;
+            float desiredAngle = 0;
+
+            string WarningMessage = null;
+            List<IMyGyro> gyroscopes = new List<IMyGyro>();
+
+            public FightStabilizator(FlightIndicators flightIndicators, IMyShipController shipController, double pidP, double pidI, double pidD, BasicLibrary basicLibrary)
+            {
+                this.flightIndicators = flightIndicators;
+                this.Echo = basicLibrary.Echo;
+                this.basicLibrary = basicLibrary;
+                this.shipController = shipController;
+                this.pid = new PIDController(pidP, pidI, pidD);
+            }
+
+            public void Reset()
+            {
+                firstRun = true;
+                FindAndInitGyroscopesOverdrive();
+                pid.Reset();
+            }
+
+            public void Release()
+            {
+                ReleaseGyroscopes();
+            }
+
+            public void CorrectRollAndPitch()
+            {
+                if (gyroscopes.Count == 0)
+                {
+                    WarningMessage = "Warning no gyro found.\nCan't stabilize ship.";
+                    Echo(WarningMessage);
+                    return;
+                }
+
+                float maxYaw = gyroscopes[0].GetMaximum<float>("Yaw") * gyroscopeMaximumGyroscopePower;
+
+                double tempYaw = flightIndicators.Yaw;
+                if (tempYaw > 180)
+                {
+                    tempYaw -= 360;
+                }
+
+                double error = 0;
+                double command = 0;
+                double currentTime = BasicLibrary.GetCurrentTimeInMs();
+                double timeStep = currentTime - lastTime;
+
+                // sometimes time difference is 0 (because system is caching getTime calls), skip computing for this time
+                if (timeStep == 0)
+                {
+                    return;
+                }
+
+                if (!firstRun)
+                {
+                    error = tempYaw - desiredAngle;
+                    if (Math.Abs(error) > gyroscopeMaximumErrorMargin)
+                    {
+                        command = - pid.Control(error, timeStep / 1000);
+                        command = MathHelper.Clamp(command, -maxYaw, maxYaw);
+                        ApplyGyroOverride(0, command, 0, gyroscopes, shipController);
+                    }
+                    else
+                    {
+                        ApplyGyroOverride(0, 0, 0, gyroscopes, shipController);
+                    }
+                }
+                else
+                {
+                    command = (tempYaw > 0) ? -maxYaw / 100 : maxYaw / 100;
+                    firstRun = false;
+                }              
+
+                gyroscopeOverridedPitch = gyroscopes[0].Pitch;
+                gyroscopeOverridedRoll = gyroscopes[0].Roll;
+                gyroscopeOverridedYaw = gyroscopes[0].Yaw;
+                lastTime = BasicLibrary.GetCurrentTimeInMs();
+            }
+
+            public string DisplayText()
+            {
+                StringBuilder stringBuilder = new StringBuilder();
+                BasicLibrary.AppendFormatted(stringBuilder, WarningMessage);
+                if(gyroscopes.Count>0)
+                {
+                    BasicLibrary.AppendFormatted(stringBuilder, "Auto-correcting roll and pitch");
+                    BasicLibrary.AppendFormatted(stringBuilder, "Pitch overdrive {0}", Math.Round(gyroscopeOverridedPitch, 4));
+                    BasicLibrary.AppendFormatted(stringBuilder, "Roll overdrive  {0}", Math.Round(gyroscopeOverridedRoll, 4));
+                    BasicLibrary.AppendFormatted(stringBuilder, "Yaw overdrive   {0}", Math.Round(gyroscopeOverridedYaw, 4));
+                    //BasicLibrary.AppendFormatted(stringBuilder, "Error           {0}", Math.Round(error, 4));
+                    //BasicLibrary.AppendFormatted(stringBuilder, "Command         {0}", Math.Round(command, 4));
+                }                
+                return stringBuilder.ToString();
+            }
+
+            void SetGyroscopesYawOverride(float overrride)
+            {
+                foreach (IMyGyro gyroscope in gyroscopes)
+                {
+                    gyroscope.Yaw = overrride;
+                }
+            }
+
+            void FindAndInitGyroscopesOverdrive()
+            {
+                if (gyroscopes.Count == 0)
+                {
+                    basicLibrary.GetBlocksOfType(gyroscopes);
+                    if (gyroscopes.Count == 0)
+                    {
+                        WarningMessage = "Warning no gyro found.";
+                        Echo(WarningMessage);
+                        return;
+                    }
+                    InitGyroscopesOverride();
+                }
+            }
+
+            void InitGyroscopesOverride()
+            {
+                foreach (IMyGyro gyroscope in gyroscopes)
+                {
+                    gyroscope.GyroPower = 1.0f; // set power to 100%
+                    gyroscope.GyroOverride = true;
+                    gyroscope.Pitch = 0;
+                    gyroscope.Roll = 0;
+                    gyroscope.Yaw = 0;
+                    gyroscope.ApplyAction("OnOff_On");
+                }
+            }
+
+            void ReleaseGyroscopes()
+            {
+                foreach (IMyGyro gyroscope in gyroscopes)
+                {
+                    gyroscope.Roll = 0;
+                    gyroscope.Pitch = 0;
+                    gyroscope.Yaw = 0;
+                    gyroscope.GyroOverride = false;
+                    gyroscope.GyroPower = 1.0f;
+                }
+            }
+
+            // thanks Whip for your help
+            //Whip's ApplyGyroOverride Method v9 - 8/19/17
+            void ApplyGyroOverride(double pitch_speed, double yaw_speed, double roll_speed, List<IMyGyro> gyro_list, IMyTerminalBlock reference)
+            {
+                var rotationVec = new Vector3D(-pitch_speed, yaw_speed, roll_speed); //because keen does some weird stuff with signs
+                var shipMatrix = reference.WorldMatrix;
+                var relativeRotationVec = Vector3D.TransformNormal(rotationVec, shipMatrix);
+                foreach (var thisGyro in gyro_list)
+                {
+                    var gyroMatrix = thisGyro.WorldMatrix;
+                    var transformedRotationVec = Vector3D.TransformNormal(relativeRotationVec, Matrix.Transpose(gyroMatrix));
+                    thisGyro.Pitch = (float)transformedRotationVec.X;
+                    thisGyro.Yaw = (float)transformedRotationVec.Y;
+                    thisGyro.Roll = (float)transformedRotationVec.Z;
+                    thisGyro.GyroOverride = true;
+                }
             }
         }
 
-        void FlightIndicatorsReleaseGyroscopes()
+        public static class VectorHelper
         {
-            foreach (IMyGyro gyroscope in flightIndicatorsGyroscopes)
-            {   
-                gyroscope.Roll = 0;
-                gyroscope.Pitch = 0;
-                gyroscope.Yaw = 0;
-                gyroscope.GyroOverride = false;
-                gyroscope.GyroPower = 1.0f;
+            public static double VectorAngleBetween(Vector3D a, Vector3D b) //returns radians 
+            {
+                if (Vector3D.IsZero(a) || Vector3D.IsZero(b))
+                    return 0;
+                else
+                    return Math.Acos(MathHelper.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1));
             }
-        }        
+
+            public static Vector3D VectorProjection(Vector3D a, Vector3D b)
+            {
+                if (Vector3D.IsZero(b))
+                    return Vector3D.Zero;
+
+                return a.Dot(b) / b.LengthSquared() * b;
+            }
+
+        }
+
+      
 
         bool TryInit()
         {
@@ -331,121 +516,25 @@ namespace RollPitchYaw
                         lcdHelper.DisplayMessage(message, flightIndicatorsLcdDisplay);
                         return false;
                     }
-                }
-                      
-
-                // compute absoluteNorthVec
-                Vector3D shipForwardVec = flightIndicatorsShipController.WorldMatrix.Forward;
-                Vector3D gravityVec = flightIndicatorsShipController.GetNaturalGravity();
-                Vector3D planetRelativeLeftVec = shipForwardVec.Cross(gravityVec);
-                flightIndicatorsShipControllerAbsoluteNorthVec = planetRelativeLeftVec;
+                }                                                           
             }
-            
+
+            if (flightIndicators == null)
+            {
+                flightIndicators = new FlightIndicators(flightIndicatorsShipController, Echo, flightIndicatorsLcdDisplay, lcdHelper);
+            }
+
+            if( fightStabilizator == null)
+            {
+                fightStabilizator = new FightStabilizator(flightIndicators, flightIndicatorsShipController, pidP, pidI, pidD, basicLibrary);
+            }
+
             return true;
-        }
+        }     
 
-        void FlightIndicatorsDisplay()
-        {
-            StringBuilder stringBuilder = new StringBuilder();
+      
 
-            BasicLibrary.AppendFormatted(stringBuilder, "Speed     {0} m/s", Math.Round(flightIndicatorsShipControllerCurrentSpeed, 2));
-            BasicLibrary.AppendFormatted(stringBuilder, "Pitch       {0}°", Math.Round(flightIndicatorsPitch, 2));
-            BasicLibrary.AppendFormatted(stringBuilder, "Roll         {0}°", Math.Round(flightIndicatorsRoll, 2));
-            BasicLibrary.AppendFormatted(stringBuilder, "Yaw        {0}°", Math.Round(flightIndicatorsYaw, 2));
-            BasicLibrary.AppendFormatted(stringBuilder, "Elevation {0} m", Math.Round(flightIndicatorsElevation, 0));
-            BasicLibrary.AppendFormatted(stringBuilder, flightIndicatorsWarningMessage);            
-            
-            if (flightIndicatorsFlightMode == FlightMode.STABILIZATION)
-            {
-                BasicLibrary.AppendFormatted(stringBuilder, "Auto-correcting roll and pitch");
-                BasicLibrary.AppendFormatted(stringBuilder, "Pitch overdrive {0}", Math.Round(t_gyroPitch, 4));
-                BasicLibrary.AppendFormatted(stringBuilder, "Roll overdrive  {0}", Math.Round(t_gyroRoll, 4));
-                BasicLibrary.AppendFormatted(stringBuilder, "Yaw overdrive   {0}", Math.Round(t_gyroYaw, 4));
-                BasicLibrary.AppendFormatted(stringBuilder, "Error           {0}", Math.Round(error, 4));
-                BasicLibrary.AppendFormatted(stringBuilder, "Command         {0}", Math.Round(command, 4));                
-            }
-            lcdHelper.DisplayMessage(stringBuilder.ToString(), flightIndicatorsLcdDisplay);
-        }
-
-        void FlightIndicatorsCompute()
-        {
-            // speed
-            var velocityVec = flightIndicatorsShipController.GetShipVelocities().LinearVelocity;
-            //CurrentSpeed = velocityVec.Length(); //raw speed of ship 
-            flightIndicatorsShipControllerCurrentSpeed = flightIndicatorsShipController.GetShipSpeed();
-
-            // roll pitch yaw
-            Vector3D shipForwardVec = flightIndicatorsShipController.WorldMatrix.Forward;
-            Vector3D shipLeftVec = flightIndicatorsShipController.WorldMatrix.Left;
-            Vector3D shipDownVec = flightIndicatorsShipController.WorldMatrix.Down;
-            Vector3D gravityVec = flightIndicatorsShipController.GetNaturalGravity();
-            Vector3D planetRelativeLeftVec = shipForwardVec.Cross(gravityVec);
-         
-            // could use next line for North Vector but we use left vector of the ship at init.
-            //Vector3D absoluteNorthVec = new Vector3D(0, -1, 0); // new Vector3D(0.342063708833718, -0.704407897782847, -0.621934025954579); if not planet worlds
-
-            if (gravityVec.LengthSquared() == 0)
-            {
-                Echo("No natural gravity field detected");
-                flightIndicatorsPitch = 0;
-                flightIndicatorsRoll = 0;
-                flightIndicatorsYaw = 0;
-                flightIndicatorsElevation = 0;
-                return;
-            }
-            // Roll
-            flightIndicatorsRoll = VectorAngleBetween(shipLeftVec, planetRelativeLeftVec) * flightIndicatorsRad2deg * Math.Sign(shipLeftVec.Dot(gravityVec));
-            if (flightIndicatorsRoll > 90 || flightIndicatorsRoll < -90)
-            {
-                flightIndicatorsRoll = 180 - flightIndicatorsRoll; //accounts for upsidedown 
-            }
-            // Pitch
-            flightIndicatorsPitch = VectorAngleBetween(shipForwardVec, gravityVec) * flightIndicatorsRad2deg; //angle from nose direction to gravity 
-            flightIndicatorsPitch -= 90; //as 90 degrees is level with ground 
-            // Yaw
-            //get east vector  
-            Vector3D relativeEastVec = gravityVec.Cross(flightIndicatorsShipControllerAbsoluteNorthVec);
-
-            //get relative north vector  
-            Vector3D relativeNorthVec = relativeEastVec.Cross(gravityVec);
-            Vector3D forwardProjectUp = VectorProjection(shipForwardVec, gravityVec);
-            Vector3D forwardProjPlaneVec = shipForwardVec - forwardProjectUp;
-
-            //find angle from abs north to projected forward vector measured clockwise  
-            flightIndicatorsYaw = VectorAngleBetween(forwardProjPlaneVec, relativeNorthVec) * flightIndicatorsRad2deg;
-            if (shipForwardVec.Dot(relativeEastVec) < 0)
-            {
-                flightIndicatorsYaw = 360.0d - flightIndicatorsYaw; //because of how the angle is measured  
-                /*
-                if(flightIndicatorsYaw>180)
-                {
-                    flightIndicatorsYaw -= 360;
-                }*/
-            }
-
-            if(!flightIndicatorsShipController.TryGetPlanetElevation(MyPlanetElevation.Surface, out flightIndicatorsElevation))
-            {
-                flightIndicatorsElevation = -1; //error, no gravity field is detected earlier, so it's another kind of problem
-            }
-                                    
-        }
-
-        double VectorAngleBetween(Vector3D a, Vector3D b) //returns radians 
-        {
-            if (Vector3D.IsZero(a) || Vector3D.IsZero(b))
-                return 0;
-            else
-                return Math.Acos(MathHelper.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1));
-        }
-
-        Vector3D VectorProjection(Vector3D a, Vector3D b)
-        {
-            if (Vector3D.IsZero(b))
-                return Vector3D.Zero;
-
-            return a.Dot(b) / b.LengthSquared() * b;
-        }       
-
+       
         public class PIDController
         {
             double p = 0;
@@ -493,37 +582,17 @@ namespace RollPitchYaw
             }
         }
 
-        // thanks Whip for your help
-        //Whip's ApplyGyroOverride Method v9 - 8/19/17
-        void ApplyGyroOverride(double pitch_speed, double yaw_speed, double roll_speed, List<IMyGyro> gyro_list, IMyTerminalBlock reference)
-        {
-            var rotationVec = new Vector3D(-pitch_speed, yaw_speed, roll_speed); //because keen does some weird stuff with signs
-            var shipMatrix = reference.WorldMatrix;
-            var relativeRotationVec = Vector3D.TransformNormal(rotationVec, shipMatrix);
-            foreach (var thisGyro in gyro_list)
-            {
-                var gyroMatrix = thisGyro.WorldMatrix;
-                var transformedRotationVec = Vector3D.TransformNormal(relativeRotationVec, Matrix.Transpose(gyroMatrix));
-                thisGyro.Pitch = (float)transformedRotationVec.X;
-                thisGyro.Yaw = (float)transformedRotationVec.Y;
-                thisGyro.Roll = (float)transformedRotationVec.Z;
-                thisGyro.GyroOverride = true;
-            }
-        }
-
 
         //
         // LCD library code
-        // IMyTextPanel FindFirst()
-        // List<IMyTextPanel> Find(string[] lcdGoupsAndNames)
-        // void InitDisplays(List<IMyTextPanel> myTextPanels)
-        // void InitDisplay(IMyTextPanel myTextPanel)
+        //
 
         public class LCDHelper
         {
             public Color defaultFontColor = new Color(150, 30, 50);
             public float defaultSize = 2;
             BasicLibrary basicLibrary;
+            StringBuilder messageBuffer = new StringBuilder();
 
             public LCDHelper(BasicLibrary basicLibrary)
             {
@@ -590,6 +659,23 @@ namespace RollPitchYaw
                 myTextPanel.FontSize = defaultSize;
                 myTextPanel.ApplyAction("OnOff_On");
             }
+
+
+            public void ClearMessageBuffer()
+            {
+                messageBuffer.Clear();
+            }
+
+            public void AppendMessageBuffer(string text)
+            {
+                messageBuffer.Append(text);
+            }
+
+            // this method does not have append boolean parameter because the plan is to use it only with a complete screen message to prevent flickering
+            public void DisplayMessageBuffer(List<IMyTextPanel> myTextPanels)
+            {
+                DisplayMessage(messageBuffer.ToString(), myTextPanels);
+            }
         }
 
 
@@ -605,7 +691,7 @@ namespace RollPitchYaw
         public class BasicLibrary
         {
             IMyGridTerminalSystem GridTerminalSystem;
-            Action<string> Echo;
+            public Action<string> Echo;
 
             public BasicLibrary(IMyGridTerminalSystem GridTerminalSystem, Action<string> Echo)
             {
@@ -670,6 +756,11 @@ namespace RollPitchYaw
                     }
                 }
                 return result;
+            }
+
+            public void GetBlocksOfType<T>(List<T> list, Func<T, bool> collect = null) where T : class
+            {
+                GridTerminalSystem.GetBlocksOfType(list, collect);
             }
 
             public static void AppendFormatted(StringBuilder stringBuilder, string stringToFormat, params object[] args)
