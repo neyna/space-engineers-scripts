@@ -1,6 +1,4 @@
-﻿using System;
-
-/*
+﻿/*
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI;
 
@@ -88,7 +86,7 @@ namespace LcdLib
         Color defaultFontColor = new Color(150, 30, 50);
         float defaultSize = 2;
 
-        private void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
+        void LcdDisplayMessage(string message, List<IMyTextPanel> myTextPanels, bool append = false)
         {
             foreach (IMyTextPanel myTextPanel in myTextPanels)
             {
@@ -97,7 +95,7 @@ namespace LcdLib
         }
 
         // return null if no lcd
-        private IMyTextPanel FindFirstLcd()
+        IMyTextPanel FindFirstLcd()
         {
             IMyTextPanel lcd = FindFirstBlockByType<IMyTextPanel>();
             if(lcd != null)
@@ -108,7 +106,7 @@ namespace LcdLib
         }
 
         // return all lcd in groups + all lcd by names
-        private List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
+        List<IMyTextPanel> FindLcds(string[] lcdGoupsAndNames)
         {
             List<IMyTextPanel> lcds = FindBlocksByNameAndGroup<IMyTextPanel>(lcdGoupsAndNames, "LCD");
             InitDisplays(lcds);
@@ -116,17 +114,17 @@ namespace LcdLib
         }
 
 
-        private void InitDisplays(List<IMyTextPanel> myTextPanels)
+        void InitDisplays(List<IMyTextPanel> myTextPanels)
         {
             InitDisplays(myTextPanels, defaultFontColor);
         }
 
-        private void InitDisplay(IMyTextPanel myTextPanel)
+        void InitDisplay(IMyTextPanel myTextPanel)
         {
             InitDisplay(myTextPanel, defaultFontColor);
         }
 
-        private void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+        void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
         {
             foreach (IMyTextPanel myTextPanel in myTextPanels)
             {
@@ -134,7 +132,7 @@ namespace LcdLib
             }
         }
 
-        private void InitDisplay(IMyTextPanel myTextPanel, Color color)
+        void InitDisplay(IMyTextPanel myTextPanel, Color color)
         {
             myTextPanel.ShowPublicTextOnScreen();
             myTextPanel.FontColor = color;
@@ -151,7 +149,7 @@ namespace LcdLib
         // BASIC LIBRARY
         //
 
-        private T FindFirstBlockByType<T>() where T : class
+        T FindFirstBlockByType<T>() where T : class
         {
             List<T> temporaryList = new List<T>();
             GridTerminalSystem.GetBlocksOfType(temporaryList);
@@ -162,7 +160,7 @@ namespace LcdLib
             return null;
         }
 
-        private List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
+        List<T> FindBlocksByNameAndGroup<T>(string[] names, string typeOfBlockForMessage) where T : class
         {
             List<T> result = new List<T>();
 
@@ -208,6 +206,14 @@ namespace LcdLib
                 }
             }
             return result;
+        }
+
+        DateTime dt1970 = new DateTime(1970, 1, 1);
+        double GetCurrentTimeInMs()
+        {
+            DateTime time = System.DateTime.Now;
+            TimeSpan timeSpan = time - dt1970;
+            return timeSpan.TotalMilliseconds;
         }
 
         //
