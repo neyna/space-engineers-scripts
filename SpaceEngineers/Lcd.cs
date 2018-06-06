@@ -46,19 +46,11 @@ namespace LcdLib
         public Action<string> Echo { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
         public bool HasMainMethod => throw new NotImplementedException();
         public bool HasSaveMethod => throw new NotImplementedException();
-        public void Main(string argument)
-        {
-            throw new NotImplementedException();
-        }
+        
 
         public void Save()
         {
             throw new NotImplementedException();
-        }
-
-        public Program()
-        {
-
         }
 
         public void Main(string argument, UpdateType updateSource)
@@ -73,17 +65,52 @@ namespace LcdLib
          * 
          */
 
-        
-  
+
+
+        // usage example
+        string[] lcdNamesAndGroupNames = { "" }; // you can add any LCD name or LCD group name in this array
+        BasicLibrary basicLibrary;
+        LCDHelper lcdHelper;
+
+        public Program()
+        {
+            basicLibrary = new BasicLibrary(GridTerminalSystem, Echo);
+            lcdHelper = new LCDHelper(basicLibrary, new Color(150,20,20), 1.5f);
+            Runtime.UpdateFrequency = UpdateFrequency.Once; // program will auto execute after compile
+        }
+
+        public void Main(string argument)
+        {
+            List<IMyTextPanel> lcds = lcdHelper.Find(lcdNamesAndGroupNames);
+            if(lcds.Count==0)
+            {
+                IMyTextPanel lcd = lcdHelper.FindFirst();
+                if(lcd != null)
+                {
+                    lcds.Add(lcd);
+                }
+            } 
+            if(lcds.Count>0)
+            {                
+                lcdHelper.DisplayMessage("Hello world !\n", lcds);
+                lcdHelper.DisplayMessage("Now I append a new line.", lcds, true); // last boolean is append 
+            } else
+            {
+                Echo("Could not find any LCD.");
+            }
+            
+        }
 
 
         //
-        // LCD library code
+        // Neyna LCD LIBRARY
+        // Free to use library for space engineers modders. Just credit me and link to this library in your creations workshop pages.
+        // https://steamcommunity.com/workshop/filedetails/?id=1404290522
         //
 
         public class LCDHelper
         {
-            public Color defaultFontColor = new Color(150, 30, 50);
+            public Color defaultFontColor = new Color(255, 255, 255);
             public float defaultSize = 2;
             BasicLibrary basicLibrary;
             StringBuilder messageBuffer = new StringBuilder();
@@ -104,8 +131,13 @@ namespace LcdLib
             {
                 foreach (IMyTextPanel myTextPanel in myTextPanels)
                 {
-                    myTextPanel.WritePublicText(message, append);
+                    DisplayMessage(message, myTextPanel, append);
                 }
+            }
+
+            public void DisplayMessage(string message, IMyTextPanel myTextPanel, bool append = false)
+            {
+                myTextPanel.WritePublicText(message, append);               
             }
 
             // return null if no lcd
@@ -130,27 +162,27 @@ namespace LcdLib
 
             public void InitDisplays(List<IMyTextPanel> myTextPanels)
             {
-                InitDisplays(myTextPanels, defaultFontColor);
+                InitDisplays(myTextPanels, defaultFontColor, defaultSize);
             }
 
             public void InitDisplay(IMyTextPanel myTextPanel)
             {
-                InitDisplay(myTextPanel, defaultFontColor);
+                InitDisplay(myTextPanel, defaultFontColor, defaultSize);
             }
 
-            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color, float fontSize)
             {
                 foreach (IMyTextPanel myTextPanel in myTextPanels)
                 {
-                    InitDisplay(myTextPanel, color);
+                    InitDisplay(myTextPanel, color, fontSize);
                 }
             }
 
-            public void InitDisplay(IMyTextPanel myTextPanel, Color color)
+            public void InitDisplay(IMyTextPanel myTextPanel, Color color, float fontSize)
             {
                 myTextPanel.ShowPublicTextOnScreen();
                 myTextPanel.FontColor = color;
-                myTextPanel.FontSize = defaultSize;
+                myTextPanel.FontSize = fontSize;
                 myTextPanel.ApplyAction("OnOff_On");
             }
 
@@ -179,7 +211,9 @@ namespace LcdLib
 
 
         //
-        // BASIC LIBRARY
+        // Neyna BASIC LIBRARY
+        // Free to use library for space engineers modders. Just credit me and link to this library in your creations workshop pages.
+        // https://steamcommunity.com/workshop/filedetails/?id=1404290522
         //
 
         public class BasicLibrary
@@ -261,8 +295,7 @@ namespace LcdLib
             {
                 if (stringToFormat != null && stringToFormat.Length > 0)
                 {
-                    stringBuilder.Append(string.Format(stringToFormat, args));
-                    stringBuilder.Append('\n');
+                    stringBuilder.Append(string.Format(stringToFormat, args));                    
                 }
             }
 
