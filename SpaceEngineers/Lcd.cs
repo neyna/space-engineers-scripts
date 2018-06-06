@@ -93,7 +93,7 @@ namespace LcdLib
             if(lcds.Count>0)
             {                
                 lcdHelper.DisplayMessage("Hello world !\n", lcds);
-                lcdHelper.DisplayMessage("Now I append a new line.", lcds, true); // last boolean is append 
+                lcdHelper.DisplayMessage("Now I append a new line.", lcds, true); // last boolean is append                 
             } else
             {
                 Echo("Could not find any LCD.");
@@ -194,8 +194,15 @@ namespace LcdLib
 
             public void AppendMessageBuffer(string text)
             {
-                messageBuffer.Append(text);                
+                messageBuffer.Append(text);
             }
+
+            public void AppendMessageBufferFormatted(string text, params object[] args)
+            {
+                BasicLibrary.AppendFormatted(messageBuffer, text, args);                              
+            }           
+
+            
 
             // this method does not have append boolean parameter because the plan is to use it only with a complete screen message to prevent flickering
             public void DisplayMessageBuffer(List<IMyTextPanel> myTextPanels)
