@@ -79,7 +79,7 @@ namespace RollPitchYaw
 
         // end of config
 
-        enum FlightMode {CALIBRATION, STABILIZATION, STANDY};
+        enum FlightMode {STABILIZATION, STANDY};
         FlightMode flightIndicatorsFlightMode = FlightMode.STANDY;
         List<IMyTextPanel> flightIndicatorsLcdDisplay = new List<IMyTextPanel>();
         IMyShipController flightIndicatorsShipController = null;
@@ -109,30 +109,18 @@ namespace RollPitchYaw
 
             if (argument!=null && argument.ToLower().Equals("stabilize_on"))
             {                
-                flightIndicatorsFlightMode = FlightMode.STABILIZATION;
-                Me.CustomData = "";
+                flightIndicatorsFlightMode = FlightMode.STABILIZATION;                
                 fightStabilizator.Reset();
             } else if(argument != null && argument.ToLower().Equals("stabilize_off"))
             {
                 flightIndicatorsFlightMode = FlightMode.STANDY;                    
                 fightStabilizator.Release();                
-            } else if (argument != null && argument.ToLower().Equals("calibration"))
-            {                
-                flightIndicatorsFlightMode = FlightMode.CALIBRATION;
-                // TODO bring back the ship to 0/0/0 for optimal test               
-            } else if(argument != null && argument.ToLower().Equals("abort_calibration"))
-            {                
-                flightIndicatorsFlightMode = FlightMode.STANDY;
-            }
-            
+            }            
 
             flightIndicators.Compute();
             if(flightIndicatorsFlightMode == FlightMode.STABILIZATION)
             {
                 fightStabilizator.Stabilize(true, true, stalizableYaw);
-            } else if(flightIndicatorsFlightMode == FlightMode.CALIBRATION)
-            {
-                // TODO
             }
 
             lcdHelper.ClearMessageBuffer();
@@ -236,11 +224,11 @@ namespace RollPitchYaw
             {
                 StringBuilder stringBuilder = new StringBuilder();
 
-                BasicLibrary.AppendFormatted(stringBuilder, "Speed     {0} m/s", Math.Round(CurrentSpeed, 2));
-                BasicLibrary.AppendFormatted(stringBuilder, "Pitch       {0}°", Math.Round(Pitch, 2));
-                BasicLibrary.AppendFormatted(stringBuilder, "Roll         {0}°", Math.Round(Roll, 2));
-                BasicLibrary.AppendFormatted(stringBuilder, "Yaw        {0}°", Math.Round(Yaw, 2));
-                BasicLibrary.AppendFormatted(stringBuilder, "Elevation {0} m", Math.Round(Elevation, 0));
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, "Speed     {0} m/s", Math.Round(CurrentSpeed, 2));
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, "Pitch       {0}°", Math.Round(Pitch, 2));
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, "Roll         {0}°", Math.Round(Roll, 2));
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, "Yaw        {0}°", Math.Round(Yaw, 2));
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, "Elevation {0} m", Math.Round(Elevation, 0));
 
                 return stringBuilder.ToString();
             }
@@ -268,18 +256,19 @@ namespace RollPitchYaw
             PIDController rollPid;
             PIDController yawPid;
 
-            float gyroscopeOverridedRoll = 0;
-            float gyroscopeOverridedPitch = 0;
-            float gyroscopeOverridedYaw = 0;
+            public float gyroscopeOverridedRoll { get; private set; } = 0;
+            public float gyroscopeOverridedPitch { get; private set; } = 0;
+            public float gyroscopeOverridedYaw { get; private set; } = 0;
 
             bool firstRun = true;            
             double lastTime = 0;
 
             float gyroscopeMaximumGyroscopePower = 1.0f;
             float gyroscopeMaximumErrorMargin = 0.001f;
-            float pitchDesiredAngle = 0;
-            float yawDesiredAngle = 0;
-            float rollDesiredAngle = 0;
+
+            public float pitchDesiredAngle = 0;
+            public float yawDesiredAngle = 0;
+            public float rollDesiredAngle = 0;
 
             string WarningMessage = null;
             List<IMyGyro> gyroscopes = new List<IMyGyro>();
@@ -380,15 +369,13 @@ namespace RollPitchYaw
             public string DisplayText()
             {
                 StringBuilder stringBuilder = new StringBuilder();
-                BasicLibrary.AppendFormatted(stringBuilder, WarningMessage);
+                BasicLibrary.AppendFormattedNewLine(stringBuilder, WarningMessage);
                 if(gyroscopes.Count>0)
                 {
-                    BasicLibrary.AppendFormatted(stringBuilder, "Auto-correcting roll and pitch");
-                    BasicLibrary.AppendFormatted(stringBuilder, "Pitch overdrive {0}", Math.Round(gyroscopeOverridedPitch, 4));
-                    BasicLibrary.AppendFormatted(stringBuilder, "Roll overdrive  {0}", Math.Round(gyroscopeOverridedRoll, 4));
-                    BasicLibrary.AppendFormatted(stringBuilder, "Yaw overdrive   {0}", Math.Round(gyroscopeOverridedYaw, 4));
-                    //BasicLibrary.AppendFormatted(stringBuilder, "Error           {0}", Math.Round(error, 4));
-                    //BasicLibrary.AppendFormatted(stringBuilder, "Command         {0}", Math.Round(command, 4));
+                    BasicLibrary.AppendFormattedNewLine(stringBuilder, "Auto-correcting roll and pitch");
+                    BasicLibrary.AppendFormattedNewLine(stringBuilder, "Pitch overdrive {0}", Math.Round(gyroscopeOverridedPitch, 4));
+                    BasicLibrary.AppendFormattedNewLine(stringBuilder, "Roll overdrive  {0}", Math.Round(gyroscopeOverridedRoll, 4));
+                    BasicLibrary.AppendFormattedNewLine(stringBuilder, "Yaw overdrive   {0}", Math.Round(gyroscopeOverridedYaw, 4));
                 }                
                 return stringBuilder.ToString();
             }
@@ -793,6 +780,12 @@ namespace RollPitchYaw
                     stringBuilder.Append(string.Format(stringToFormat, args));
                     stringBuilder.Append('\n');
                 }
+            }
+
+            public static void AppendFormattedNewLine(StringBuilder stringBuilder, string stringToFormat, params object[] args)
+            {
+                AppendFormatted(stringBuilder, stringToFormat, args);
+                stringBuilder.Append('\n');
             }
 
             static DateTime dt1970 = new DateTime(1970, 1, 1);

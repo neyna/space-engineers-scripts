@@ -266,6 +266,12 @@ namespace LcdLib
                 }
             }
 
+            public static void AppendFormattedNewLine(StringBuilder stringBuilder, string stringToFormat, params object[] args)
+            {
+                AppendFormatted(stringBuilder, stringToFormat, args);
+                stringBuilder.Append('\n');              
+            }
+
             static DateTime dt1970 = new DateTime(1970, 1, 1);
             public static double GetCurrentTimeInMs()
             {
