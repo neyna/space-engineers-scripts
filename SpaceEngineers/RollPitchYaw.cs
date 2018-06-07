@@ -594,12 +594,14 @@ namespace RollPitchYaw
 
 
         //
-        // LCD library code
+        // Neyna LCD LIBRARY
+        // Free to use library for space engineers modders. Just credit me and link to this library in your creations workshop pages.
+        // https://steamcommunity.com/workshop/filedetails/?id=1404290522
         //
 
         public class LCDHelper
         {
-            public Color defaultFontColor = new Color(150, 30, 50);
+            public Color defaultFontColor = new Color(255, 255, 255);
             public float defaultSize = 2;
             BasicLibrary basicLibrary;
             StringBuilder messageBuffer = new StringBuilder();
@@ -620,8 +622,13 @@ namespace RollPitchYaw
             {
                 foreach (IMyTextPanel myTextPanel in myTextPanels)
                 {
-                    myTextPanel.WritePublicText(message, append);
+                    DisplayMessage(message, myTextPanel, append);
                 }
+            }
+
+            public void DisplayMessage(string message, IMyTextPanel myTextPanel, bool append = false)
+            {
+                myTextPanel.WritePublicText(message, append);
             }
 
             // return null if no lcd
@@ -646,27 +653,27 @@ namespace RollPitchYaw
 
             public void InitDisplays(List<IMyTextPanel> myTextPanels)
             {
-                InitDisplays(myTextPanels, defaultFontColor);
+                InitDisplays(myTextPanels, defaultFontColor, defaultSize);
             }
 
             public void InitDisplay(IMyTextPanel myTextPanel)
             {
-                InitDisplay(myTextPanel, defaultFontColor);
+                InitDisplay(myTextPanel, defaultFontColor, defaultSize);
             }
 
-            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color)
+            public void InitDisplays(List<IMyTextPanel> myTextPanels, Color color, float fontSize)
             {
                 foreach (IMyTextPanel myTextPanel in myTextPanels)
                 {
-                    InitDisplay(myTextPanel, color);
+                    InitDisplay(myTextPanel, color, fontSize);
                 }
             }
 
-            public void InitDisplay(IMyTextPanel myTextPanel, Color color)
+            public void InitDisplay(IMyTextPanel myTextPanel, Color color, float fontSize)
             {
                 myTextPanel.ShowPublicTextOnScreen();
                 myTextPanel.FontColor = color;
-                myTextPanel.FontSize = defaultSize;
+                myTextPanel.FontSize = fontSize;
                 myTextPanel.ApplyAction("OnOff_On");
             }
 
@@ -695,7 +702,9 @@ namespace RollPitchYaw
 
 
         //
-        // BASIC LIBRARY
+        // Neyna BASIC LIBRARY
+        // Free to use library for space engineers modders. Just credit me and link to this library in your creations workshop pages.
+        // https://steamcommunity.com/workshop/filedetails/?id=1404290522
         //
 
         public class BasicLibrary
@@ -778,7 +787,6 @@ namespace RollPitchYaw
                 if (stringToFormat != null && stringToFormat.Length > 0)
                 {
                     stringBuilder.Append(string.Format(stringToFormat, args));
-                    stringBuilder.Append('\n');
                 }
             }
 

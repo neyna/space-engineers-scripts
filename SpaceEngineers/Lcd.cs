@@ -1,4 +1,5 @@
-﻿/*
+﻿#region pre_script
+/*
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI;
 
@@ -64,7 +65,7 @@ namespace LcdLib
          * 
          * 
          */
-
+        #endregion pre_script
 
 
         // usage example
