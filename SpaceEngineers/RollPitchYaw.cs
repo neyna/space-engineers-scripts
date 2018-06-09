@@ -75,7 +75,8 @@ namespace RollPitchYaw
         // config
         string[] flightIndicatorsLcdNames = {""};
         string flightIndicatorsControllerName = "";
-        const bool stalizableYaw = true;
+        const bool stalizableYaw = false; // do you want to stablize yaw to 0°
+        const bool isPlanetWorld = true; // this should be true for every easy start or star system scenario, false if no planet in your scenario
 
         // end of config
 
@@ -135,8 +136,8 @@ namespace RollPitchYaw
         public class FlightIndicators
         {
             IMyShipController shipController;
-            Action<string> Echo;
-            List<IMyTextPanel> lcdDisplays = null;
+            readonly Action<string> Echo;
+            readonly List<IMyTextPanel> lcdDisplays = null;
             private LCDHelper lcdHelper;
             Vector3D absoluteNorthVector;
 
@@ -147,20 +148,26 @@ namespace RollPitchYaw
             public double Elevation { get; private set; } = 0;
 
             const double rad2deg = 180 / Math.PI;
+            // thanks whip for those vectors
+            static Vector3D absoluteNorthPlanetWorldsVector = new Vector3D(0, -1, 0);
+            static Vector3D absoluteNorthNotPlanetWorldsVector = new Vector3D(0.342063708833718, -0.704407897782847, -0.621934025954579);
 
-            public FlightIndicators(IMyShipController shipController, Action<String> Echo, List<IMyTextPanel> lcdDisplays = null, LCDHelper lcdHelper =null)
+            public FlightIndicators(IMyShipController shipController, Action<String> Echo, bool isPlanetWorld = true, List<IMyTextPanel> lcdDisplays = null, LCDHelper lcdHelper =null)
             {
                 this.shipController = shipController;
                 this.Echo = Echo;
                 this.lcdDisplays = lcdDisplays;
                 this.lcdHelper = lcdHelper;
+               
+                if(isPlanetWorld)
+                {
+                    absoluteNorthVector = absoluteNorthPlanetWorldsVector;
+                } else
+                {
+                    absoluteNorthVector = absoluteNorthNotPlanetWorldsVector;
+                }
+                
 
-                // compute absoluteNorthVector, we compute a world left vector of the cockpit as absolute north
-                // we could use new Vector3D(0, -1, 0); or new Vector3D(0.342063708833718, -0.704407897782847, -0.621934025954579); if not planet worlds but needs additional config
-                Vector3D shipForwardVector = shipController.WorldMatrix.Forward;
-                Vector3D gravityVector = shipController.GetNaturalGravity();
-                Vector3D planetRelativeLeftVector = shipForwardVector.Cross(gravityVector);
-                absoluteNorthVector = planetRelativeLeftVector;
             }
 
             public void Compute()
@@ -429,7 +436,7 @@ namespace RollPitchYaw
             }
 
             // thanks Whip for your help
-            //Whip's ApplyGyroOverride Method v9 - 8/19/17
+            // Whip's ApplyGyroOverride Method v9 - 8/19/17
             void ApplyGyroOverride(double pitch_speed, double yaw_speed, double roll_speed, List<IMyGyro> gyro_list, IMyTerminalBlock reference)
             {
                 var rotationVec = new Vector3D(-pitch_speed, yaw_speed, roll_speed); //because keen does some weird stuff with signs
@@ -532,7 +539,7 @@ namespace RollPitchYaw
 
             if (flightIndicators == null)
             {
-                flightIndicators = new FlightIndicators(flightIndicatorsShipController, Echo, flightIndicatorsLcdDisplay, lcdHelper);
+                flightIndicators = new FlightIndicators(flightIndicatorsShipController, Echo, isPlanetWorld, flightIndicatorsLcdDisplay, lcdHelper);
             }
 
             if( fightStabilizator == null)
@@ -796,7 +803,7 @@ namespace RollPitchYaw
                 stringBuilder.Append('\n');
             }
 
-            static DateTime dt1970 = new DateTime(1970, 1, 1);
+            static readonly DateTime dt1970 = new DateTime(1970, 1, 1);
             public static double GetCurrentTimeInMs()
             {
                 DateTime time = System.DateTime.Now;
