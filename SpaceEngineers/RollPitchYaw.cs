@@ -1,25 +1,11 @@
 ﻿#region pre_script
 /*
-using Sandbox.ModAPI.Ingame;
-using Sandbox.ModAPI;
-
-Sandbox.Common.dll
-Sandbox.Game.dll
-VRage.Game.dll
-VRage.Library.dll
-VRage.Math.dll
-
-
-////
 Sandbox.Game.dll
 Sandbox.Common.dll
-
 SpaceEngineers.Game.dll
-
 Vrage.Library.dll
 Vrage.Math.dll
 Vrage.Game.dll
-
 */
 using System;
 using System.Collections.Generic;
@@ -34,7 +20,6 @@ using Sandbox.Game;
 using VRage.Collections;
 using VRage.Game.ModAPI.Ingame;
 using SpaceEngineers.Game.ModAPI;
-//using SpaceEngineers.Game.ModAPI.Ingame;
 
 namespace RollPitchYaw
 {
@@ -65,12 +50,11 @@ namespace RollPitchYaw
         }
         */
 
+        #endregion pre_script
 
         // TODO
         // cockpit must have its bottom towards gravity, add parameter to tell which direction the cockpit is facing (TOP, BOTTOM, HORIZONTAL)
 
-        #endregion pre_script
-       
 
         // config
         string[] flightIndicatorsLcdNames = {""};

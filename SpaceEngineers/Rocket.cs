@@ -1,26 +1,11 @@
-﻿using System;
-
+﻿#region pre_script
 /*
-using Sandbox.ModAPI.Ingame;
-using Sandbox.ModAPI;
-
-Sandbox.Common.dll
-Sandbox.Game.dll
-VRage.Game.dll
-VRage.Library.dll
-VRage.Math.dll
-
-
-////
 Sandbox.Game.dll
 Sandbox.Common.dll
-
 SpaceEngineers.Game.dll
-
 Vrage.Library.dll
 Vrage.Math.dll
 Vrage.Game.dll
-
 */
 using System;
 using System.Collections.Generic;
@@ -34,7 +19,7 @@ using Sandbox.Common;
 using Sandbox.Game;
 using VRage.Collections;
 using VRage.Game.ModAPI.Ingame;
-//using SpaceEngineers.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI;
 
 namespace Rocket
 {
@@ -65,7 +50,7 @@ namespace Rocket
         }
         */
 
-
+        #endregion pre_script
 
 
 
@@ -75,6 +60,9 @@ namespace Rocket
         // TODO landing gear OFF au décollage
         //thrusters[0].GridThrustDirection VRageMath.Vector3I.Forward Backward Left Right Up Down 
         //thrusters[0].Orientation
+
+        // IMyShipController.CalculateShipMass().PhysicalMass
+
         // TOTO changer les lcd.setValue
         // TODO lib pour les LCD panel en prenant un tableau de string mix groupes et noms LCD
 
@@ -86,6 +74,7 @@ namespace Rocket
         string mainCockpitName = "";
         string mainLcdPanelName = "LCD rocket launch";
         string upThrusterGroup = "Rocket Takeoff - up thrusters";
+        float cockpitHeight = 8.0f; // height of your cockpit from the ground, can see it when rocket is landed, enter cockpit and look at altitude
         int countDown = -1; // timer to takeoff, set to -1 for no countdown
 
         // takeoff constants
@@ -96,8 +85,6 @@ namespace Rocket
         const float minOverride = 0.01f;
         const float decreaseOverrideRate = 0.002f;                                                    
         const float increaseOverrideRate = 0.002f;
-        const double elevationThreshold1 = 1500;
-        const double elevationThreshold2 = 750;
 
 
         // dot not touch
@@ -511,10 +498,11 @@ namespace Rocket
 
 
 
-
+        #region post_script
 
 
 
     }
 
 }
+#endregion post_script

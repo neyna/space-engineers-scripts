@@ -1,25 +1,11 @@
 ﻿#region pre_script
 /*
-using Sandbox.ModAPI.Ingame;
-using Sandbox.ModAPI;
-
-Sandbox.Common.dll
-Sandbox.Game.dll
-VRage.Game.dll
-VRage.Library.dll
-VRage.Math.dll
-
-
-////
 Sandbox.Game.dll
 Sandbox.Common.dll
-
 SpaceEngineers.Game.dll
-
 Vrage.Library.dll
 Vrage.Math.dll
 Vrage.Game.dll
-
 */
 using System;
 using System.Collections.Generic;
@@ -33,7 +19,7 @@ using Sandbox.Common;
 using Sandbox.Game;
 using VRage.Collections;
 using VRage.Game.ModAPI.Ingame;
-//using SpaceEngineers.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI;
 
 namespace LcdLib
 {
@@ -327,8 +313,9 @@ namespace LcdLib
         //
 
 
-
+        #region post_script
 
     }
 
 }
+#endregion post_script

@@ -1,24 +1,11 @@
-﻿/*
-using Sandbox.ModAPI.Ingame;
-using Sandbox.ModAPI;
-
-Sandbox.Common.dll
-Sandbox.Game.dll
-VRage.Game.dll
-VRage.Library.dll
-VRage.Math.dll
-
-
-////
+﻿#region pre_script
+/*
 Sandbox.Game.dll
 Sandbox.Common.dll
-
 SpaceEngineers.Game.dll
-
 Vrage.Library.dll
 Vrage.Math.dll
 Vrage.Game.dll
-
 */
 using System;
 using System.Collections.Generic;
@@ -32,8 +19,7 @@ using Sandbox.Common;
 using Sandbox.Game;
 using VRage.Collections;
 using VRage.Game.ModAPI.Ingame;
-//using SpaceEngineers.Game.ModAPI;
-using SpaceEngineers.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI;
 
 namespace PlaySound
 {
@@ -73,6 +59,9 @@ namespace PlaySound
          * 
          * 
          */
+
+
+        #endregion pre_script
 
 
         // CONFIG
@@ -153,8 +142,9 @@ namespace PlaySound
             }
         }
 
-
+        #region post_script
 
     }
 
 }
+#endregion post_script
