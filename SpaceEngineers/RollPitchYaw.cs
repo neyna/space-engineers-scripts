@@ -247,9 +247,9 @@ namespace RollPitchYaw
             PIDController rollPid;
             PIDController yawPid;
 
-            public float gyroscopeOverridedRoll { get; private set; } = 0;
-            public float gyroscopeOverridedPitch { get; private set; } = 0;
-            public float gyroscopeOverridedYaw { get; private set; } = 0;
+            public double gyroscopeOverridedRoll { get; private set; } = 0;
+            public double gyroscopeOverridedPitch { get; private set; } = 0;
+            public double gyroscopeOverridedYaw { get; private set; } = 0;
 
             bool firstRun = true;            
             double lastTime = 0;
@@ -334,11 +334,19 @@ namespace RollPitchYaw
                 else
                 {                    
                     firstRun = false;
-                }              
+                }
 
-                gyroscopeOverridedPitch = gyroscopes[0].Pitch;
-                gyroscopeOverridedRoll = gyroscopes[0].Roll;
-                gyroscopeOverridedYaw = gyroscopes[0].Yaw;
+                // compute overriden gyro values into controller coordonates
+                Vector3D overrideData = new Vector3D(-gyroscopes[0].Pitch, gyroscopes[0].Yaw, gyroscopes[0].Roll);
+                MatrixD gyroscopeWorldMatrix = gyroscopes[0].WorldMatrix;
+                MatrixD controllerWorldMatrix = shipController.WorldMatrix;
+                Vector3D overrideDataInControllerView = Vector3D.TransformNormal(Vector3D.TransformNormal(overrideData, gyroscopeWorldMatrix), Matrix.Transpose(controllerWorldMatrix));
+
+                gyroscopeOverridedPitch = overrideDataInControllerView.X;
+                gyroscopeOverridedYaw = overrideDataInControllerView.Y;
+                gyroscopeOverridedRoll = -overrideDataInControllerView.Z; // negative because of the way we compute roll           
+
+
                 lastTime = BasicLibrary.GetCurrentTimeInMs();
             }
 
