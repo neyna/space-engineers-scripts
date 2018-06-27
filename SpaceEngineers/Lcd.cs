@@ -167,13 +167,25 @@ namespace LcdLib
 
             public void InitDisplay(IMyTextPanel myTextPanel, Color color, float fontSize)
             {
-                myTextPanel.ShowPublicTextOnScreen();
-                myTextPanel.FontColor = color;
-                myTextPanel.FontSize = fontSize;
+                myTextPanel.ShowPublicTextOnScreen();                
                 myTextPanel.ApplyAction("OnOff_On");
+                ChangeColorAndFontSize(myTextPanel, color, fontSize);
             }
 
-            
+            static public void ChangeColorAndFontSize(List<IMyTextPanel> myTextPanels, Color color, float fontSize = 2)
+            {
+                foreach (IMyTextPanel myTextPanel in myTextPanels)
+                {
+                    ChangeColorAndFontSize(myTextPanel, color, fontSize);
+                }
+            }
+
+            static public void ChangeColorAndFontSize(IMyTextPanel myTextPanel, Color color, float fontSize = 2)
+            {
+                myTextPanel.FontColor = color;
+                myTextPanel.FontSize = fontSize;
+            }
+
             public void ClearMessageBuffer()
             {
                 messageBuffer.Clear();
@@ -187,9 +199,7 @@ namespace LcdLib
             public void AppendMessageBufferFormatted(string text, params object[] args)
             {
                 BasicLibrary.AppendFormatted(messageBuffer, text, args);                              
-            }           
-
-            
+            }
 
             // this method does not have append boolean parameter because the plan is to use it only with a complete screen message to prevent flickering
             public void DisplayMessageBuffer(List<IMyTextPanel> myTextPanels)
