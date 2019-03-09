@@ -33,7 +33,8 @@ namespace PressurizedRoom
         public Action<string> Echo { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
         public bool HasMainMethod => throw new NotImplementedException();
         public bool HasSaveMethod => throw new NotImplementedException();
-        
+
+        public Func<IMyIntergridCommunicationSystem> IGC_ContextGetter { set => throw new NotImplementedException(); }
 
         public void Save()
         {
@@ -85,13 +86,20 @@ namespace PressurizedRoom
         readonly Func<IMyBlockGroup, bool> blockNameFilter = block => block.Name.Contains(SCRIPT_KEYWORD);
         bool configurationOk = true;
 
-        List<IMyTextPanel> lcds; //TEMP
+        List<IMyTextPanel> lcds; //TODO TEMP, move that into RoomManager
+        private bool scriptInitializing = false;
+
+        // action, action+post action pour mettre le boolean actionInProgress à false ou alors de manière auto à la fin d'un action on connait l'objet et on met à false
+        // on garde une liste d'action par objet et seulement quand la liste est vide on met à bool à false 
+        // chaque action possede son propre boolean actionInProgress
+        // exemple quand on passe les portes à ON, on met une action dans la queue pour les fermer ou ouvrir
+        // si action in progress taux de refresh à 10 sinon 100
 
         public Program()
         {
             basicLibrary = new BasicLibrary(GridTerminalSystem, Echo);
             lcdHelper = new LCDHelper(basicLibrary, new Color(255,255,255), 1.5f);
-            roomManager = new RoomManager();
+            roomManager = new RoomManager(Echo);
             CreateConfiguration();
 
             if(!configurationOk)
@@ -101,13 +109,17 @@ namespace PressurizedRoom
                 return;
             }
 
-            Runtime.UpdateFrequency = UpdateFrequency.Update100;
-            
+            Runtime.UpdateFrequency = UpdateFrequency.Update100;            
 
-            // close all doors
-            // pressurize
-            // set internal doors to ON
-            // set external doors to OFF
+            roomManager.AllDoorsOn();
+            // set fresh air vents to ON and depressurize OFF (set recycle air vents to OFF and depressurize to ON)
+            // TODO
+            // TODO
+            // TODO
+
+            // close all doors (action in progress + action type to check the end of action)
+            roomManager.CloseDoors();
+            scriptInitializing = true;
         }
 
         // argument is roomName,DoorOrDoorGroupName
@@ -118,19 +130,41 @@ namespace PressurizedRoom
                 Echo("Program called but configuration is invalid. Press recompile and look for errors.");
                 return;
             }
-            /*
-            if (roomManager.commonLcds.Count > 0)
+
+            if(scriptInitializing)
+            {
+                // check if no more operation in progress
+                // this must be done after door are closed
+                // set internal doors to ON
+                // set external doors to OFF
+                //roomManager.InitDoors();
+
+                //when finished
+                //scriptInitializing = false;
+                Display();
+                return;
+            }
+
+
+            Display();
+
+        }
+
+        void Display()
+        {
+            if (lcds.Count > 0)
             {
                 lcdHelper.ClearMessageBuffer();
 
-                lcdHelper.AppendMessageBuffer("Test PressurizedRoom.\n");
-                lcdHelper.AppendMessageBufferFormatted("Number of doors : {0}", roomManager.DoorCount());
+                lcdHelper.AppendMessageBuffer("Pressurized room status :\n");
+                //roomManager.rooms.Values;
+                foreach (Room room in roomManager.rooms.Values)
+                {
+                    lcdHelper.AppendMessageBufferFormatted("Room {0}\nDoors opened {1}\nDoors closed {2}\nactionInProgress {3}\n", room.Name, 0, 0, room.HasActionInProgress());
+                }
 
-                lcdHelper.DisplayMessageBuffer(roomManager.commonLcds);
+                lcdHelper.DisplayMessageBuffer(lcds);
             }
-            */
-
-
         }
 
         void CreateConfiguration()
@@ -184,9 +218,13 @@ namespace PressurizedRoom
             }
 
             // common LCD
+            // TEMPORARY, DOES NO HANDLE GROUPS
             lcds = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType(lcds, nameFilter);
+            GridTerminalSystem.GetBlocksOfType(lcds, block => block.CustomName.Contains(SCRIPT_KEYWORD));
             lcdHelper.InitDisplays(lcds);
+
+            // check for sas or special configs
+            roomManager.FinalizeConfiguration();
         }
 
         private bool RegisterDoors(List<IMyDoor> doors, string groupName =null)
@@ -223,7 +261,7 @@ namespace PressurizedRoom
                 bool parseOk = parseInfo.Parse();
                 if (!parseOk) return false;
 
-                roomManager.RegisterLight(light, parseInfo.roomName, parseInfo.objectName);
+                roomManager.RegisterLight(light, parseInfo.roomName);
             }
             return true;
         }
@@ -232,90 +270,225 @@ namespace PressurizedRoom
         public class RoomManager
         {
             //public List<IMyTextPanel> commonLcds { get; private set; } = new List<IMyTextPanel>();
-            readonly Dictionary<string, Room> rooms = new Dictionary<string, Room>();
-/*
-            public int DoorCount()
-            {
-                int result = 0;
-                foreach (Room room in rooms.Values)
-                {
+            internal readonly Dictionary<string, Room> rooms = new Dictionary<string, Room>();
+            private Action<string> Echo;
 
-                }
-                return result;
+            public RoomManager(Action<string> Echo)
+            {
+                this.Echo = Echo;
             }
-            */
 
             internal void RegisterDoor(IMyDoor door, string roomName, string doorName, bool isInteriorDoor)
             {  
-                Room room = GetOrCreateRoom(roomName);
+                Room room = GetOrCreateRoom(roomName, Echo);
                 room.RegisterDoor(door, doorName, isInteriorDoor);
             }
 
             internal void RegisterVent(IMyAirVent vent, string roomName, string ventName, bool recycleAir)
             {
-                Room room = GetOrCreateRoom(roomName);
+                Room room = GetOrCreateRoom(roomName, Echo);
                 room.RegisterVent(vent, ventName, recycleAir);
             }
 
-            internal void RegisterLight(IMyInteriorLight light, string roomName, string lightName)
+            internal void RegisterLight(IMyInteriorLight light, string roomName)
             {
-                Room room = GetOrCreateRoom(roomName);
-                room.RegisterLight(light, lightName);
+                Room room = GetOrCreateRoom(roomName, Echo);
+                room.RegisterLight(light);
             }
 
-            private Room GetOrCreateRoom(string roomName)
+            private Room GetOrCreateRoom(string roomName, Action<string> Echo)
             {
                 Room room = null;
                 bool found = rooms.TryGetValue(roomName, out room);
                 if (!found)
                 {
-                    room = new Room(roomName);
+                    room = new Room(roomName, Echo);
                     rooms.Add(roomName, room);
                 }
                 return room;
+            }
+
+            internal void InitDoors()
+            {
+                foreach (Room room in rooms.Values)
+                {
+                    room.InitDoors();
+                }
+            }
+
+            internal void CloseDoors()
+            {
+                foreach (Room room in rooms.Values)
+                {
+                    room.CloseDoors();
+                }
+            }
+
+            internal void AllDoorsOn()
+            {
+                foreach (Room room in rooms.Values)
+                {
+                    room.AllDoorsOn();
+                }
+            }
+
+            // check for sas or special configs
+            internal void FinalizeConfiguration()
+            {
+                // TODO
+                // TODO
+                // TODO
             }
         }
 
         public class Room
         {
+            //public List<IMyTextPanel> lcds { get; private set; } = new List<IMyTextPanel>();
             bool actionInProgress = false;
-            private string name;
+            public string Name { get; private set; }
+            private Action<string> Echo;
 
             readonly Dictionary<string, DoorGroup> doors = new Dictionary<string, DoorGroup>();
             readonly Dictionary<string, AirVentGroup> vents = new Dictionary<string, AirVentGroup>();
-            readonly Dictionary<string, List<IMyInteriorLight>> lights = new Dictionary<string, List<IMyInteriorLight>>();            
+            readonly List<IMyInteriorLight> lights = new List<IMyInteriorLight>();            
 
-            public Room(string name)
+            public Room(string name, Action<string> Echo)
             {
-                this.name = name;
+                this.Name = name;
+                this.Echo = Echo;
             }
 
             internal void RegisterDoor(IMyDoor door, string doorName, bool isInteriorDoor)
             {
-                // dictionary by doorName to create door groups
-                
+                DoorGroup doorGroup = null;
+                bool found = doors.TryGetValue(doorName, out doorGroup);
+                if(!found)
+                {
+                    doorGroup = new DoorGroup(doorName, Echo);
+                    doors.Add(doorName, doorGroup);
+                }
+                doorGroup.RegisterDoor(door, isInteriorDoor);
             }
 
-            internal void RegisterLight(IMyInteriorLight light, string lightName)
+            internal void RegisterLight(IMyInteriorLight light)
             {
-                
+                lights.Add(light);
             }
 
             internal void RegisterVent(IMyAirVent vent, string ventName, bool recycleAir)
             {
-                
+                AirVentGroup ventGroup = null;
+                bool found = vents.TryGetValue(ventName, out ventGroup);
+                if (!found)
+                {
+                    ventGroup = new AirVentGroup(ventName);
+                    vents.Add(ventName, ventGroup);
+                }
+                ventGroup.RegisterVent(vent, recycleAir);
+            }
+
+            internal void InitDoors()
+            {
+                foreach (DoorGroup doorGroup in doors.Values)
+                {
+                    doorGroup.InitDoors();
+                }
+            }
+
+            internal void AllDoorsOn()
+            {
+                foreach (DoorGroup doorGroup in doors.Values)
+                {
+                    doorGroup.AllDoorsOn();
+                }
+            }
+
+            internal bool HasActionInProgress()
+            {
+                // TODO
+                // TODO ADD VENT STATUS
+                // TODO
+                foreach (DoorGroup doorGroup in doors.Values)
+                {
+                    if (doorGroup.actionInProgress) return true;
+                }
+                return false;
+            }
+
+            internal void CloseDoors()
+            {
+                foreach (DoorGroup doorGroup in doors.Values)
+                {
+                    foreach (IMyDoor door in doorGroup.doors)
+                    {
+                        door.CloseDoor();    
+                    }
+                }
+                actionInProgress = true;
             }
         }
 
         public class DoorGroup
         {
-            string name;
-            bool actionInProgress;
+            internal bool actionInProgress = false;
+            internal string name;
+            internal List<IMyDoor> doors = new List<IMyDoor>();
+            internal bool isInteriorDoor;
+            private Action<string> Echo;
+
+            //door.Status
+            //door.Status
+            //door.Status
+            //door.Status
+
+            public DoorGroup(string doorName, Action<string> Echo)
+            {
+                this.name = doorName;
+                this.Echo = Echo;
+            }
+
+            internal void AllDoorsOn()
+            {
+                foreach (IMyDoor door in doors)
+                {
+                    door.Enabled = true;                    
+                }
+            }
+
+            // set internal doors to ON
+            // set external doors to OFF
+            internal void InitDoors()
+            {               
+                foreach (IMyDoor door in doors)
+                {
+                    door.Enabled = isInteriorDoor;
+                }
+            }
+
+            internal void RegisterDoor(IMyDoor door, bool isInteriorDoor)
+            {
+                this.isInteriorDoor = isInteriorDoor;
+                doors.Add(door);
+            }
         }
+
         public class AirVentGroup
         {
             string name;
             bool actionInProgress;
+            private List<IMyAirVent> vents = new List<IMyAirVent>();
+            private bool recycleAir;
+
+            public AirVentGroup(string ventName)
+            {
+                this.name = ventName;
+            }
+
+            internal void RegisterVent(IMyAirVent vent, bool recycleAir)
+            {
+                this.recycleAir = recycleAir;
+                vents.Add(vent);
+            }
         }
 
         public class ParseInfo
@@ -463,12 +636,7 @@ namespace PressurizedRoom
                             break;
                     }
                 }
-                // TODO
-                // TODO
-                // TODO
-                // TODO
-                // TODO TEMP
-                Echo(this.ToString()+"\n");
+                //Echo(this.ToString()+"\n");
                 return true;
             }
 
