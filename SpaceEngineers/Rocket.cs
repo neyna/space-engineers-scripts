@@ -33,6 +33,9 @@ namespace Rocket
         public Action<string> Echo { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
         public bool HasMainMethod => throw new NotImplementedException();
         public bool HasSaveMethod => throw new NotImplementedException();
+
+        public Func<IMyIntergridCommunicationSystem> IGC_ContextGetter { set => throw new NotImplementedException(); }
+
         public void Main(string argument)
         {
             throw new NotImplementedException();
